@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cron expression explainer — unsent.tools</title>
+  <meta name="description" content="Explain any cron expression in plain English and see its next run times, in your timezone or UTC. Runs entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .explain {
+      margin-top: 1.5rem;
+      padding: 0.9rem 1.1rem;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--card);
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .note { color: var(--muted); font-size: 0.85rem; margin-top: 0.6rem; }
+    td.rel { color: var(--muted); font-family: var(--sans); }
+    .tzrow { display: flex; align-items: center; gap: 0.5rem; margin-top: 1.25rem; }
+    .tzrow label { font-weight: 400; margin: 0; font-size: 0.9rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">cron expression explainer</span>
+    </header>
+
+    <h1>Cron expression explainer</h1>
+    <p class="lede">
+      Enter a five-field cron expression (<code>minute hour day-of-month month
+      day-of-week</code>) or a macro like <code>@daily</code>. Get a plain-English
+      reading and the next run times. Everything is computed locally in your
+      browser.
+    </p>
+
+    <label for="expr">Cron expression</label>
+    <input type="text" id="expr" spellcheck="false" autocomplete="off"
+           autocapitalize="off" autocorrect="off"
+           placeholder="*/15 9-17 * * MON-FRI" value="*/15 9-17 * * MON-FRI"
+           aria-describedby="hint err">
+    <div class="hint" id="hint">
+      Supports lists (<code>1,15</code>), ranges (<code>9-17</code>), steps
+      (<code>*/5</code>), names (<code>JAN</code>, <code>MON</code>), and
+      <code>@hourly</code>/<code>@daily</code>/<code>@weekly</code>/<code>@monthly</code>/<code>@yearly</code>.
+    </div>
+    <div class="error" id="err" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-expr="*/5 * * * *">*/5 * * * *</button>
+      <button type="button" data-expr="30 4 * * *">30 4 * * *</button>
+      <button type="button" data-expr="0 22 * * 1-5">0 22 * * 1-5</button>
+      <button type="button" data-expr="0 0 1 1 *">0 0 1 1 *</button>
+      <button type="button" data-expr="0 0 1 * MON">0 0 1 * MON</button>
+      <button type="button" data-expr="@daily">@daily</button>
+    </div>
+
+    <div class="explain" id="explain" hidden></div>
+    <div class="note" id="ornote" hidden>
+      Both day-of-month and day-of-week are set, so this runs when
+      <strong>either</strong> matches (standard Vixie cron behaviour) — a common
+      surprise.
+    </div>
+
+    <div class="tzrow">
+      <input type="checkbox" id="utc">
+      <label for="utc">Show times in UTC instead of <span id="tzname"></span></label>
+    </div>
+
+    <table class="results" id="runs" hidden>
+      <tbody></tbody>
+    </table>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { parse, describe, nextRuns } from "./cron.js";
+
+    const input = document.getElementById("expr");
+    const err = document.getElementById("err");
+    const explain = document.getElementById("explain");
+    const ornote = document.getElementById("ornote");
+    const runsTable = document.getElementById("runs");
+    const runsBody = runsTable.querySelector("tbody");
+    const utcBox = document.getElementById("utc");
+    document.getElementById("tzname").textContent =
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "local time";
+
+    function rel(ms) {
+      let s = Math.round(ms / 1000);
+      if (s < 60) return "in under a minute";
+      const parts = [];
+      for (const [name, size] of [["day", 86400], ["hour", 3600], ["minute", 60]]) {
+        const n = Math.floor(s / size);
+        if (n > 0) {
+          parts.push(`${n} ${name}${n === 1 ? "" : "s"}`);
+          s -= n * size;
+        }
+        if (parts.length === 2) break;
+      }
+      return "in " + parts.join(" ");
+    }
+
+    function fmtDate(d, utc) {
+      return d.toLocaleString(undefined, {
+        weekday: "short", year: "numeric", month: "short", day: "numeric",
+        hour: "2-digit", minute: "2-digit", hour12: false,
+        timeZone: utc ? "UTC" : undefined,
+      });
+    }
+
+    function render() {
+      const raw = input.value.trim();
+      if (!raw) {
+        err.textContent = "";
+        explain.hidden = ornote.hidden = runsTable.hidden = true;
+        return;
+      }
+      let parsed;
+      try {
+        parsed = parse(raw);
+      } catch (e) {
+        err.textContent = e.message;
+        explain.hidden = ornote.hidden = runsTable.hidden = true;
+        return;
+      }
+      err.textContent = "";
+      explain.textContent = describe(parsed);
+      explain.hidden = false;
+      ornote.hidden = !(parsed.domRestricted && parsed.dowRestricted);
+
+      const utc = utcBox.checked;
+      const now = new Date();
+      let runs;
+      try {
+        runs = nextRuns(parsed, { from: now, count: 10, utc });
+      } catch (e) {
+        err.textContent = e.message;
+        runsTable.hidden = true;
+        return;
+      }
+      runsBody.replaceChildren(...runs.map((d, i) => {
+        const tr = document.createElement("tr");
+        const th = document.createElement("th");
+        th.textContent = i === 0 ? "Next run" : `Then`;
+        const td = document.createElement("td");
+        td.textContent = fmtDate(d, utc) + (utc ? " UTC" : "");
+        const tdRel = document.createElement("td");
+        tdRel.className = "rel";
+        tdRel.textContent = rel(d.getTime() - now.getTime());
+        tr.append(th, td, tdRel);
+        return tr;
+      }));
+      runsTable.hidden = false;
+    }
+
+    input.addEventListener("input", render);
+    utcBox.addEventListener("change", render);
+    for (const b of document.querySelectorAll(".examples button")) {
+      b.addEventListener("click", () => {
+        input.value = b.dataset.expr;
+        render();
+        input.focus();
+      });
+    }
+    render();
+  </script>
+</body>
+</html>

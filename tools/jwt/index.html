@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JWT decoder — unsent.tools</title>
+  <meta name="description" content="Decode and inspect JSON Web Tokens, with plain-English claim explanations, expiry status, and optional HMAC signature verification. Runs entirely in your browser — the token never leaves your machine.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .token-view {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      word-break: break-all;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.7rem 0.85rem;
+      margin-top: 0.9rem;
+      line-height: 1.7;
+    }
+    .jwt-h { color: #c0392b; }
+    .jwt-p { color: #8e44ad; }
+    .jwt-s { color: #2471a3; }
+    @media (prefers-color-scheme: dark) {
+      .jwt-h { color: #ff8a7a; }
+      .jwt-p { color: #cf9fff; }
+      .jwt-s { color: #7ec3ff; }
+    }
+    .status {
+      margin-top: 1.25rem;
+      padding: 0.6rem 0.85rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-weight: 600;
+    }
+    .status.ok    { border-color: #2e8b57; color: #2e8b57; }
+    .status.warn  { border-color: #b9770e; color: #b9770e; }
+    .status.bad   { border-color: var(--error); color: var(--error); }
+    @media (prefers-color-scheme: dark) {
+      .status.ok   { border-color: #5fd68f; color: #5fd68f; }
+      .status.warn { border-color: #ffc266; color: #ffc266; }
+    }
+    h2 { font-size: 1.05rem; margin: 2rem 0 0.25rem; }
+    td .note { display: block; color: var(--muted); font-family: var(--sans); font-size: 0.82rem; }
+    #verify-result { margin-top: 0.6rem; font-weight: 600; min-height: 1.3em; }
+    #verify-result.ok { color: #2e8b57; }
+    #verify-result.bad { color: var(--error); }
+    @media (prefers-color-scheme: dark) { #verify-result.ok { color: #5fd68f; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">JWT decoder</span>
+    </header>
+
+    <h1>JWT decoder</h1>
+    <p class="lede">
+      Paste a JSON Web Token to see its header, claims, and expiry status.
+      Everything happens locally in your browser — the token is never sent
+      anywhere, unlike online decoders that receive whatever you paste.
+    </p>
+
+    <label for="token">Token</label>
+    <textarea id="token" rows="5" spellcheck="false" autocomplete="off"
+              autocapitalize="off" autocorrect="off"
+              placeholder="eyJhbGciOi… (a Bearer prefix is fine too)"
+              aria-describedby="err"></textarea>
+    <div class="error" id="err" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-example="valid">signed, unexpired</button>
+      <button type="button" data-example="expired">expired</button>
+      <button type="button" data-example="tampered">tampered signature</button>
+    </div>
+
+    <div id="out" hidden>
+      <div class="token-view" id="token-view" aria-hidden="true"></div>
+      <div class="status" id="status"></div>
+
+      <h2>Header</h2>
+      <table class="results"><tbody id="header-rows"></tbody></table>
+
+      <h2>Payload claims</h2>
+      <table class="results"><tbody id="claim-rows"></tbody></table>
+
+      <div id="verify-box" hidden>
+        <h2>Verify signature (HMAC)</h2>
+        <p class="hint">This token uses a symmetric <span id="verify-alg"></span> signature,
+          so it can be checked with the shared secret. The secret stays in your browser.</p>
+        <label for="secret">Secret</label>
+        <input type="text" id="secret" spellcheck="false" autocomplete="off"
+               autocapitalize="off" autocorrect="off" placeholder="your-256-bit-secret">
+        <div id="verify-result" role="status"></div>
+      </div>
+    </div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { decodeJwt, describeClaims, tokenStatus, algNote, verifyHmacSignature, HMAC_ALGS }
+      from "./jwt.js";
+
+    const EXAMPLES = {
+      valid: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkFkYSBMb3ZlbGFjZSIsImlzcyI6Imh0dHBzOi8vdG9vbGJveC5leGFtcGxlIiwiaWF0IjoxNzU1OTUwNDAwLCJleHAiOjk5OTk5OTk5OTl9.5fZ15o5Cd5eGvUueXxj3G7P8U46DRNwr11blYUK6TU0",
+      expired: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0MiIsInNjb3BlIjoicmVhZCB3cml0ZSIsImlhdCI6MTUxNjIzOTAyMiwiZXhwIjoxNTE2MjQyNjIyfQ.SMSqKgXh3T3hvK5qOf3qPm8K5j2ASoyfInr52PJ3Pa8",
+    };
+    // Same header and signature as "valid", but the name claim was altered
+    // after signing — so the signature no longer matches.
+    EXAMPLES.tampered = EXAMPLES.valid.split(".")[0]
+      + ".eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkV2ZSBNYWxsb3J5IiwiaXNzIjoiaHR0cHM6Ly90b29sYm94LmV4YW1wbGUiLCJpYXQiOjE3NTU5NTA0MDAsImV4cCI6OTk5OTk5OTk5OX0."
+      + EXAMPLES.valid.split(".")[2];
+    // The example secret (both examples are signed with it):
+    const EXAMPLE_SECRET = "secret";
+
+    const $ = (id) => document.getElementById(id);
+    const tokenEl = $("token"), errEl = $("err"), outEl = $("out");
+    let currentToken = null; // last successfully decoded raw token
+    let verifySeq = 0;       // guards against out-of-order async verify results
+
+    function row(th, td, note) {
+      const tr = document.createElement("tr");
+      const h = document.createElement("th");
+      h.textContent = th;
+      const d = document.createElement("td");
+      d.textContent = td;
+      if (note) {
+        const n = document.createElement("span");
+        n.className = "note";
+        n.textContent = note;
+        d.appendChild(n);
+      }
+      tr.append(h, d);
+      return tr;
+    }
+
+    function render() {
+      const raw = tokenEl.value.trim();
+      currentToken = null;
+      if (!raw) { outEl.hidden = true; errEl.textContent = ""; return; }
+      let d;
+      try {
+        d = decodeJwt(raw);
+      } catch (e) {
+        outEl.hidden = true;
+        errEl.textContent = e.message;
+        return;
+      }
+      errEl.textContent = "";
+      currentToken = raw;
+
+      // colored token
+      const tv = $("token-view");
+      tv.textContent = "";
+      const classes = ["jwt-h", "jwt-p", "jwt-s"];
+      d.parts.forEach((part, i) => {
+        const span = document.createElement("span");
+        span.className = classes[i];
+        span.textContent = part;
+        tv.appendChild(span);
+        if (i < 2) tv.appendChild(document.createTextNode("."));
+      });
+
+      // status banner
+      const now = Date.now();
+      const st = tokenStatus(d.payload, now);
+      const statusEl = $("status");
+      if (d.isUnsecured) {
+        statusEl.className = "status bad";
+        statusEl.textContent = "⚠ alg is \"none\" — this token is unsigned and must not be trusted.";
+      } else {
+        const cls = { valid: "ok", expired: "bad", "not-yet-valid": "warn", "no-expiry": "warn" }[st.state];
+        statusEl.className = "status " + cls;
+        statusEl.textContent =
+          st.state === "valid" ? `In its validity window — ${st.detail}.` :
+          st.state === "expired" ? `Expired — ${st.detail.replace("expired ", "")}.` :
+          st.state === "not-yet-valid" ? `Not yet valid — ${st.detail}.` :
+          "No expiry — the token has no exp claim.";
+      }
+
+      // header table
+      const hr = $("header-rows");
+      hr.textContent = "";
+      for (const [k, v] of Object.entries(d.header)) {
+        const val = typeof v === "string" ? v : JSON.stringify(v);
+        hr.appendChild(row(k, val, k === "alg" ? algNote(v) : ""));
+      }
+      hr.appendChild(row("signature", d.signatureBytes.length + " bytes",
+        "decoding proves nothing — only verification does"));
+
+      // claims table
+      const cr = $("claim-rows");
+      cr.textContent = "";
+      const rows = describeClaims(d.payload, now);
+      if (rows.length === 0) cr.appendChild(row("(empty)", "the payload has no claims"));
+      for (const r of rows) cr.appendChild(row(r.name, r.display, r.note));
+
+      // verify box for HMAC algs
+      const isHmac = d.header.alg in HMAC_ALGS;
+      $("verify-box").hidden = !isHmac;
+      if (isHmac) { $("verify-alg").textContent = d.header.alg; verify(); }
+
+      outEl.hidden = false;
+    }
+
+    async function verify() {
+      const resEl = $("verify-result");
+      const secret = $("secret").value;
+      const seq = ++verifySeq;
+      if (!currentToken || secret === "") { resEl.textContent = ""; resEl.className = ""; return; }
+      let ok;
+      try {
+        ok = await verifyHmacSignature(currentToken, secret);
+      } catch (e) {
+        if (seq !== verifySeq) return;
+        resEl.className = "bad";
+        resEl.textContent = e.message;
+        return;
+      }
+      if (seq !== verifySeq) return;
+      resEl.className = ok ? "ok" : "bad";
+      resEl.textContent = ok
+        ? "✓ Signature is valid with this secret."
+        : "✗ Signature does NOT match this secret (wrong secret, or the token was altered).";
+    }
+
+    tokenEl.addEventListener("input", render);
+    $("secret").addEventListener("input", verify);
+    for (const b of document.querySelectorAll(".examples button")) {
+      b.addEventListener("click", () => {
+        tokenEl.value = EXAMPLES[b.dataset.example];
+        $("secret").value = EXAMPLE_SECRET;
+        render();
+      });
+    }
+    render();
+  </script>
+</body>
+</html>
