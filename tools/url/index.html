@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>URL inspector — unsent.tools</title>
+  <meta name="description" content="Break a URL into its parts, decode percent-encoding and punycode hostnames, and spot embedded credentials — entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    h2 { font-size: 1.05rem; margin: 2rem 0 0.25rem; }
+    .warnings { margin-top: 1.25rem; display: grid; gap: 0.5rem; }
+    .warnings div {
+      padding: 0.6rem 0.85rem;
+      border-radius: 8px;
+      border: 1px solid #b9770e;
+      color: #b9770e;
+      font-size: 0.92rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      .warnings div { border-color: #ffc266; color: #ffc266; }
+    }
+    table.results td.empty { color: var(--muted); font-family: var(--sans); }
+    td .note { display: block; color: var(--muted); font-family: var(--sans); font-size: 0.82rem; }
+    #enc-out { margin-top: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">URL inspector</span>
+    </header>
+
+    <h1>URL inspector</h1>
+    <p class="lede">
+      Paste a URL to break it into its parts: host (with punycode decoded),
+      port, path, query parameters, and fragment — with warnings for embedded
+      credentials and lookalike hostnames. Nothing you paste leaves this page.
+    </p>
+
+    <label for="url">URL</label>
+    <textarea id="url" rows="3" spellcheck="false" autocomplete="off"
+              autocapitalize="off" autocorrect="off"
+              placeholder="https://example.com/path?query=…" aria-describedby="hint err"></textarea>
+    <div class="hint" id="hint">A bare <code>host/path</code> or <code>host:port</code> is treated as <code>https://</code>.</div>
+    <div class="error" id="err" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-url="https://user:p%40ss@example.com:8443/a/b%20c?x=1&y=two#sec">credentials</button>
+      <button type="button" data-url="https://xn--80ak6aa92e.com/login">lookalike host</button>
+      <button type="button" data-url="https://api.example.com/v2/search?q=caf%C3%A9+au+lait&access_token=secret123&page=2">token in query</button>
+      <button type="button" data-url="localhost:8080/health?verbose">localhost</button>
+    </div>
+
+    <div id="out" hidden>
+      <div class="warnings" id="warnings"></div>
+
+      <h2>Components</h2>
+      <table class="results"><tbody id="comp-rows"></tbody></table>
+
+      <h2>Query parameters</h2>
+      <table class="results"><tbody id="param-rows"></tbody></table>
+    </div>
+
+    <h2>Encode / decode a component</h2>
+    <p class="hint" style="margin-top:0">Separate from the URL above: paste any string to
+      percent-decode it strictly (malformed sequences are reported, not guessed) or see
+      its three encodings.</p>
+    <textarea id="enc-in" rows="2" spellcheck="false" autocomplete="off"
+              autocapitalize="off" autocorrect="off"
+              placeholder="a string or %-encoded fragment"></textarea>
+    <table class="results" id="enc-out" hidden><tbody>
+      <tr><th>Decoded (strict)</th><td data-k="decoded"></td></tr>
+      <tr><th>Decoded (+ as space)</th><td data-k="decform"></td></tr>
+      <tr><th>encodeURIComponent</th><td data-k="component"></td></tr>
+      <tr><th>encodeURI</th><td data-k="full"></td></tr>
+      <tr><th>Form-encoded</th><td data-k="form"></td></tr>
+    </tbody></table>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { parseUrl, percentDecode, encodeVariants } from "./url.js";
+
+    const $ = (id) => document.getElementById(id);
+    const input = $("url"), err = $("err"), out = $("out");
+
+    function row(tbody, label, value, { note = "", empty = false } = {}) {
+      const tr = document.createElement("tr");
+      const th = document.createElement("th");
+      th.textContent = label;
+      const td = document.createElement("td");
+      if (empty) td.classList.add("empty");
+      td.textContent = value;
+      if (note) {
+        const n = document.createElement("span");
+        n.className = "note";
+        n.textContent = note;
+        td.appendChild(n);
+      }
+      tr.append(th, td);
+      tbody.appendChild(tr);
+    }
+
+    function render() {
+      const raw = input.value.trim();
+      if (!raw) { out.hidden = true; err.textContent = ""; return; }
+      let r;
+      try { r = parseUrl(raw); }
+      catch (e) { out.hidden = true; err.textContent = e.message; return; }
+      err.textContent = "";
+
+      const warns = $("warnings");
+      warns.replaceChildren();
+      for (const w of r.warnings) {
+        const d = document.createElement("div");
+        d.textContent = "⚠ " + w.text;
+        warns.appendChild(d);
+      }
+
+      const comp = $("comp-rows");
+      comp.replaceChildren();
+      row(comp, "Scheme", r.scheme, r.assumedScheme ? { note: "assumed — the input had no scheme" } : {});
+      if (r.username || r.password) {
+        row(comp, "Username", r.username);
+        if (r.password) row(comp, "Password", r.password);
+      }
+      if (r.hostname) {
+        row(comp, "Host", r.hostname, r.isIdn ? { note: "displays as: " + r.hostUnicode } : {});
+        row(comp, "Port", r.port || (r.defaultPort !== null ? String(r.defaultPort) : "—"),
+            r.port ? {} : { note: r.defaultPort !== null ? "default for " + r.scheme : "" });
+      }
+      row(comp, "Path", r.pathname || "(none)", { empty: !r.pathname });
+      if (r.pathSegments.length && r.pathSegments.join("/") !== r.pathname.replace(/^\/|\/$/g, "")) {
+        row(comp, "Path (decoded)", "/" + r.pathSegments.join("/"));
+      }
+      row(comp, "Fragment", r.fragment ? r.fragmentDecoded : "(none)", { empty: !r.fragment });
+      if (r.hostname) row(comp, "Origin", r.origin);
+
+      const params = $("param-rows");
+      params.replaceChildren();
+      if (r.params.length === 0) {
+        row(params, "—", "(no query string)", { empty: true });
+      } else {
+        for (const p of r.params) {
+          row(params, p.key === "" ? "(empty key)" : p.key,
+              p.value === null ? "(no value)" : p.value,
+              { empty: p.value === null,
+                note: p.rawValue !== null && p.rawValue !== p.value ? "raw: " + p.rawValue : "" });
+        }
+      }
+      out.hidden = false;
+    }
+
+    const encIn = $("enc-in"), encOut = $("enc-out");
+    const cell = (k) => encOut.querySelector(`[data-k="${k}"]`);
+    function renderEnc() {
+      const s = encIn.value;
+      if (!s) { encOut.hidden = true; return; }
+      for (const [k, mode] of [["decoded", {}], ["decform", { plusAsSpace: true }]]) {
+        try { cell(k).textContent = percentDecode(s, mode); cell(k).classList.remove("empty"); }
+        catch (e) { cell(k).textContent = e.message; cell(k).classList.add("empty"); }
+      }
+      const v = encodeVariants(s);
+      cell("component").textContent = v.component;
+      cell("full").textContent = v.full;
+      cell("form").textContent = v.form;
+      encOut.hidden = false;
+    }
+
+    input.addEventListener("input", render);
+    encIn.addEventListener("input", renderEnc);
+    for (const b of document.querySelectorAll(".examples button")) {
+      b.addEventListener("click", () => { input.value = b.dataset.url; render(); input.focus(); });
+    }
+    render();
+  </script>
+</body>
+</html>

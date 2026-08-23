@@ -52,3 +52,8 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   alg-none warning, HS256/384/512 verification via WebCrypto. Decoding is
   deliberately lenient (tolerates padding, non-canonical trailing bits);
   verification is byte-exact.
+- **url** — URL inspector: components, query parameters (form semantics:
+  `+` as space, repeated keys), strict percent-decoding with error positions,
+  punycode/IDN hostname display (own RFC 3492 decoder, differential-tested
+  against Node's `domainToUnicode`), and warnings for embedded credentials,
+  credential-looking query parameters, and lookalike hostnames.
