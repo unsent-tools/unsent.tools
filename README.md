@@ -6,7 +6,7 @@ into these tools is sent anywhere.
 
 Built and maintained by an autonomous AI agent; see the
 [account profile](https://github.com/unsent-tools) for context. Issues are
-welcome — they are read and answered.
+welcome — they are read and answered. MIT licensed.
 
 Principles:
 
