@@ -4,8 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Subnet / CIDR calculator — unsent.tools</title>
-  <meta name="description" content="Compute the network address, broadcast, usable host range, netmask, wildcard, and address count for any IPv4 CIDR block. Runs entirely in your browser.">
+  <meta name="description" content="Compute the network address, host range, netmask, and address count for any IPv4 or IPv6 CIDR block. Runs entirely in your browser.">
   <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .notes { color: var(--muted); font-size: 0.88rem; margin-top: 0.8rem; }
+    table.results td { word-break: break-all; }
+  </style>
 </head>
 <body>
   <div class="wrap">
@@ -16,7 +20,8 @@
 
     <h1>Subnet / CIDR calculator</h1>
     <p class="lede">
-      Enter an IPv4 address with a prefix (<code>/24</code>) or a dotted netmask
+      Enter an IPv4 or IPv6 address with a prefix (<code>/24</code>,
+      <code>/64</code>) or an IPv4 dotted netmask
       (<code>/255.255.255.0</code>). Everything is computed locally in your
       browser.
     </p>
@@ -24,32 +29,35 @@
     <label for="cidr">CIDR block or address</label>
     <input type="text" id="cidr" spellcheck="false" autocomplete="off"
            autocapitalize="off" autocorrect="off"
-           placeholder="192.168.1.10/24" value="192.168.1.10/24" aria-describedby="hint err">
-    <div class="hint" id="hint">Accepts <code>a.b.c.d/p</code>, a bare address (treated as /32), or a dotted netmask.</div>
+           placeholder="192.168.1.10/24 or 2001:db8::1/64" value="192.168.1.10/24" aria-describedby="hint err">
+    <div class="hint" id="hint">Accepts <code>a.b.c.d/p</code>, IPv6 like <code>2001:db8::/48</code>, a bare address (treated as a single host), or a dotted netmask.</div>
     <div class="error" id="err" role="alert"></div>
 
     <div class="examples">
       Try:
       <button type="button" data-cidr="10.0.0.0/8">10.0.0.0/8</button>
       <button type="button" data-cidr="172.16.5.130/20">172.16.5.130/20</button>
-      <button type="button" data-cidr="192.0.2.4/30">192.0.2.4/30</button>
       <button type="button" data-cidr="203.0.113.1/31">203.0.113.1/31</button>
-      <button type="button" data-cidr="8.8.8.8/32">8.8.8.8/32</button>
+      <button type="button" data-cidr="2001:db8::dead:beef/64">2001:db8::dead:beef/64</button>
+      <button type="button" data-cidr="fe80::1/10">fe80::1/10</button>
+      <button type="button" data-cidr="::ffff:192.0.2.1">::ffff:192.0.2.1</button>
     </div>
 
     <table class="results" id="results" hidden>
       <tbody>
-        <tr><th>Network address</th><td data-k="network"></td></tr>
-        <tr><th>Broadcast address</th><td data-k="broadcast"></td></tr>
-        <tr><th>Usable host range</th><td data-k="hostrange"></td></tr>
-        <tr><th>Netmask</th><td data-k="netmask"></td></tr>
-        <tr><th>Wildcard mask</th><td data-k="wildcard"></td></tr>
-        <tr><th>Prefix length</th><td data-k="prefix"></td></tr>
-        <tr><th>Total addresses</th><td data-k="total"></td></tr>
-        <tr><th>Usable hosts</th><td data-k="usable"></td></tr>
-        <tr><th>Address type</th><td data-k="type"></td></tr>
+        <tr data-row="network"><th>Network address</th><td data-k="network"></td></tr>
+        <tr data-row="broadcast"><th>Broadcast address</th><td data-k="broadcast"></td></tr>
+        <tr data-row="last"><th>Last address</th><td data-k="last"></td></tr>
+        <tr data-row="hostrange"><th>Usable host range</th><td data-k="hostrange"></td></tr>
+        <tr data-row="netmask"><th>Netmask</th><td data-k="netmask"></td></tr>
+        <tr data-row="wildcard"><th>Wildcard mask</th><td data-k="wildcard"></td></tr>
+        <tr data-row="prefix"><th>Prefix length</th><td data-k="prefix"></td></tr>
+        <tr data-row="total"><th>Total addresses</th><td data-k="total"></td></tr>
+        <tr data-row="usable"><th>Usable hosts</th><td data-k="usable"></td></tr>
+        <tr data-row="type"><th>Address type</th><td data-k="type"></td></tr>
       </tbody>
     </table>
+    <div class="notes" id="notes"></div>
 
     <footer class="site">
       <a href="../../">← all tools</a> · runs offline · no data leaves your browser
@@ -58,29 +66,46 @@
 
   <script type="module">
     import { describe } from "./subnet.js";
+    import { describe6 } from "./subnet6.js";
 
     const input = document.getElementById("cidr");
     const err = document.getElementById("err");
     const results = document.getElementById("results");
+    const notes = document.getElementById("notes");
     const cell = (k) => results.querySelector(`[data-k="${k}"]`);
+    const rowEl = (k) => results.querySelector(`[data-row="${k}"]`);
     const fmt = (n) => n.toLocaleString("en-US");
+
+    const V4_ROWS = ["network", "broadcast", "hostrange", "netmask", "wildcard", "prefix", "total", "usable", "type"];
+    const V6_ROWS = ["network", "last", "netmask", "prefix", "total", "type"];
+    const ALL_ROWS = ["network", "broadcast", "last", "hostrange", "netmask", "wildcard", "prefix", "total", "usable", "type"];
+
+    function showRows(keep) {
+      for (const k of ALL_ROWS) rowEl(k).hidden = !keep.includes(k);
+    }
 
     function render() {
       const raw = input.value.trim();
+      notes.textContent = "";
       if (!raw) {
         results.hidden = true;
         err.textContent = "";
         return;
       }
-      let r;
       try {
-        r = describe(raw);
+        if (raw.includes(":")) renderV6(describe6(raw));
+        else renderV4(describe(raw));
       } catch (e) {
         results.hidden = true;
         err.textContent = e.message;
         return;
       }
       err.textContent = "";
+      results.hidden = false;
+    }
+
+    function renderV4(r) {
+      showRows(V4_ROWS);
       cell("network").textContent = r.network;
       cell("broadcast").textContent = r.prefix >= 31 ? "—" : r.broadcast;
       cell("hostrange").textContent = r.firstHost === r.lastHost
@@ -92,7 +117,17 @@
       cell("total").textContent = fmt(r.totalAddresses);
       cell("usable").textContent = fmt(r.usableHosts);
       cell("type").textContent = r.isPrivate ? "Private (RFC 1918)" : "Public";
-      results.hidden = false;
+    }
+
+    function renderV6(r) {
+      showRows(V6_ROWS);
+      cell("network").textContent = r.network;
+      cell("last").textContent = r.last;
+      cell("netmask").textContent = r.netmask;
+      cell("prefix").textContent = "/" + r.prefix;
+      cell("total").textContent = r.totalAddresses;
+      cell("type").textContent = r.type;
+      notes.textContent = r.notes.join(" ");
     }
 
     input.addEventListener("input", render);

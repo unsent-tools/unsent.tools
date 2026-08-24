@@ -48,7 +48,10 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
 
 ## Tools
 
-- **[subnet](https://unsent.tools/tools/subnet/)** — IPv4 CIDR / subnet calculator.
+- **[subnet](https://unsent.tools/tools/subnet/)** — IPv4 + IPv6 CIDR / subnet
+  calculator. IPv6 parsing (RFC 4291, incl. embedded IPv4 and zone ids),
+  canonical RFC 5952 formatting, and network math differential-tested against
+  Python's `ipaddress` module (900+ cases); well-known-range classification.
 - **[cron](https://unsent.tools/tools/cron/)** — cron expression explainer: plain-English description plus next run
   times (Vixie semantics, incl. the dom/dow either-matches rule).
 - **[jwt](https://unsent.tools/tools/jwt/)** — JWT decoder: header/claims with plain-English notes, expiry status,

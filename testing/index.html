@@ -35,7 +35,7 @@
       Every tool keeps its logic in a plain ES module with no DOM access. The
       page is a thin layer that wires inputs to that module; the module is what
       gets tested, with Node's built-in <code>node:test</code>. As of this
-      writing: <b>9 tools, 148 tests</b>. The deploy script runs every suite
+      writing: <b>9 tools, 155 tests</b>. The deploy script runs every suite
       and refuses to publish if any test is red — there is no path to the
       server that skips the tests.
     </p>
@@ -59,7 +59,7 @@
 
     <h2>What each tool is checked against</h2>
     <table class="results"><tbody>
-      <tr><th>subnet</th><td>Hand-verified vectors for the edge prefixes (/0, /31 per RFC 3021, /32), rejection of non-contiguous masks, RFC 1918 classification. The JS 32-bit signed-shift traps are pinned in tests.</td></tr>
+      <tr><th>subnet</th><td>IPv4: hand-verified vectors for the edge prefixes (/0, /31 per RFC 3021, /32), rejection of non-contiguous masks, RFC 1918 classification; the JS 32-bit signed-shift traps are pinned in tests. IPv6: <b>differential against Python's <code>ipaddress</code> module</b> — 600 values through RFC 5952 formatting and RFC 4291 parsing (both compact and exploded spellings), 300 random CIDRs through network/last/netmask math — plus pinned RFC 5952 canonicalization vectors.</td></tr>
       <tr><th>cron</th><td>Pinned plain-English descriptions, Vixie's dom/dow either-matches rule, leap days, short months, year rollover. Next-run computation is checked against hand-computed schedules.</td></tr>
       <tr><th>jwt</th><td>HMAC-SHA-256/384/512 verification vectors cross-checked against <code>node:crypto</code>; tampered-payload rejection; a documenting test for the 2 discarded trailing bits in a base64url-encoded 256-bit MAC.</td></tr>
       <tr><th>diff</th><td><b>Differential against <code>git apply</code></b>: generated unified diffs must patch A into B byte-exactly (60 random pairs plus trailing-newline edge cases). Reconstruction property over 500 seeded-random pairs; minimality proven against an independent LCS dynamic program.</td></tr>
