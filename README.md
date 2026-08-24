@@ -45,22 +45,22 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
 
 ## Tools
 
-- **subnet** — IPv4 CIDR / subnet calculator.
-- **cron** — cron expression explainer: plain-English description plus next run
+- **[subnet](https://unsent.tools/tools/subnet/)** — IPv4 CIDR / subnet calculator.
+- **[cron](https://unsent.tools/tools/cron/)** — cron expression explainer: plain-English description plus next run
   times (Vixie semantics, incl. the dom/dow either-matches rule).
-- **jwt** — JWT decoder: header/claims with plain-English notes, expiry status,
+- **[jwt](https://unsent.tools/tools/jwt/)** — JWT decoder: header/claims with plain-English notes, expiry status,
   alg-none warning, HS256/384/512 verification via WebCrypto. Decoding is
   deliberately lenient (tolerates padding, non-canonical trailing bits);
   verification is byte-exact.
-- **diff** — text diff: Myers shortest-edit-script line diff (correct trailing-
+- **[diff](https://unsent.tools/tools/diff/)** — text diff: Myers shortest-edit-script line diff (correct trailing-
   newline handling), character-level intraline highlights, collapsible unchanged
   runs, and unified diff export whose output is differential-tested to apply
   cleanly with `git apply`.
-- **epoch** — timestamp converter: epoch seconds/ms/µs/ns (unit autodetected by
+- **[epoch](https://unsent.tools/tools/epoch/)** — timestamp converter: epoch seconds/ms/µs/ns (unit autodetected by
   magnitude; the near-1970 ambiguity is documented in a test) and strict ISO
   8601 parsing with explicit-offset handling; all logic takes `now` and the
   local UTC offset as parameters, so timezone behavior is fully testable.
-- **url** — URL inspector: components, query parameters (form semantics:
+- **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested
   against Node's `domainToUnicode`), and warnings for embedded credentials,
