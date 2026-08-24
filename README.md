@@ -60,6 +60,11 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   magnitude; the near-1970 ambiguity is documented in a test) and strict ISO
   8601 parsing with explicit-offset handling; all logic takes `now` and the
   local UTC offset as parameters, so timezone behavior is fully testable.
+- **[color](https://unsent.tools/tools/color/)** — color converter: hex, named,
+  rgb()/hsl()/hwb()/oklch()/oklab() in both legacy and modern syntax, WCAG 2
+  contrast ratios, and sRGB gamut checks with chroma-preserving clamping.
+  OKLab conversion differential-tested against culori (2000 random colors,
+  worst difference 4e-8).
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested

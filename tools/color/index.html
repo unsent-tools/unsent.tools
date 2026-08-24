@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Color converter — unsent.tools</title>
+  <meta name="description" content="Convert colors between hex, rgb, hsl, hwb, oklch and oklab, with WCAG contrast ratios and sRGB gamut checks — entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .swatchrow { display: flex; gap: 1rem; align-items: stretch; margin: 1.2rem 0; }
+    .swatch {
+      width: 7rem; min-height: 4.5rem; border-radius: 8px; border: 1px solid var(--border);
+      background-image:
+        linear-gradient(45deg, rgba(128,128,128,.25) 25%, transparent 25%, transparent 75%, rgba(128,128,128,.25) 75%),
+        linear-gradient(45deg, rgba(128,128,128,.25) 25%, transparent 25%, transparent 75%, rgba(128,128,128,.25) 75%);
+      background-size: 16px 16px; background-position: 0 0, 8px 8px;
+      position: relative; overflow: hidden;
+    }
+    .swatch::after { content: ""; position: absolute; inset: 0; background: var(--sw, transparent); }
+    .contrast { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    .contrast .chip { border-radius: 8px; border: 1px solid var(--border); padding: 0.5rem 0.7rem;
+      font-family: var(--mono); font-size: 0.9rem; display: flex; flex-direction: column; gap: 0.15rem; }
+    .chip .ratio { font-size: 1.15rem; }
+    .chip .grade { font-family: var(--sans); font-size: 0.78rem; opacity: 0.85; }
+    table.results td { font-family: var(--mono); word-break: break-all; cursor: pointer; }
+    table.results td:hover { color: var(--accent); }
+    .note { margin-top: 0.6rem; color: var(--muted); font-size: 0.88rem; }
+    .copied { font-family: var(--sans); font-size: 0.8rem; color: var(--accent); margin-left: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">color converter</span>
+    </header>
+
+    <h1>Color converter</h1>
+    <p class="lede">
+      Paste a color in any CSS form — hex, a name, rgb(), hsl(), hwb(), oklch()
+      or oklab() — and get every other form, WCAG contrast ratios, and an sRGB
+      gamut check. Nothing you type leaves this page.
+    </p>
+
+    <label for="c">Color</label>
+    <input type="text" id="c" spellcheck="false" autocomplete="off"
+           autocapitalize="off" autocorrect="off"
+           placeholder="#663399 or oklch(0.7 0.15 250) or tomato" aria-describedby="hint err">
+    <div class="hint" id="hint">Modern and legacy syntax both work: rgb(255 0 0 / 50%) or rgba(255, 0, 0, 0.5).
+      Angles take deg, rad, grad, or turn.</div>
+    <div class="error" id="err" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-v="rebeccapurple">rebeccapurple</button>
+      <button type="button" data-v="#1e90ff">#1e90ff</button>
+      <button type="button" data-v="hsl(120 60% 40%)">hsl</button>
+      <button type="button" data-v="oklch(0.7 0.15 250)">oklch</button>
+      <button type="button" data-v="oklch(0.7 0.4 30)">out of gamut</button>
+      <button type="button" data-v="rgb(255 99 71 / 60%)">with alpha</button>
+    </div>
+
+    <div id="result" hidden>
+      <div class="swatchrow">
+        <div class="swatch" id="swatch" title="the color"></div>
+        <div class="contrast">
+          <div class="chip" style="background:#ffffff;color:#000">
+            <span class="ratio" id="cw"></span>
+            <span class="grade" id="cw-grade"></span>
+          </div>
+          <div class="chip" style="background:#000000;color:#fff">
+            <span class="ratio" id="cb"></span>
+            <span class="grade" id="cb-grade"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="note" id="note"></div>
+
+      <table class="results"><tbody>
+        <tr><th>Hex</th><td data-k="hex" title="click to copy"></td></tr>
+        <tr><th>RGB</th><td data-k="rgb" title="click to copy"></td></tr>
+        <tr><th>HSL</th><td data-k="hsl" title="click to copy"></td></tr>
+        <tr><th>HWB</th><td data-k="hwb" title="click to copy"></td></tr>
+        <tr><th>OKLCH</th><td data-k="oklch" title="click to copy"></td></tr>
+        <tr><th>OKLab</th><td data-k="oklab" title="click to copy"></td></tr>
+      </tbody></table>
+    </div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { convert } from "./color.js";
+
+    const $ = (id) => document.getElementById(id);
+    const input = $("c"), err = $("err"), result = $("result"), note = $("note");
+
+    function grade(ratio) {
+      if (ratio >= 7) return "AAA text · AA large";
+      if (ratio >= 4.5) return "AA text · AAA large";
+      if (ratio >= 3) return "AA large text only";
+      return "fails WCAG AA";
+    }
+
+    function render() {
+      const raw = input.value.trim();
+      if (!raw) { result.hidden = true; err.textContent = ""; return; }
+      let r;
+      try { r = convert(raw); }
+      catch (e) { result.hidden = true; err.textContent = e.message; return; }
+      err.textContent = "";
+
+      $("swatch").style.setProperty("--sw", r.formats.hex);
+      $("cw").textContent = r.contrastWhite.toFixed(2) + " : 1 on white";
+      $("cw-grade").textContent = grade(r.contrastWhite);
+      $("cb").textContent = r.contrastBlack.toFixed(2) + " : 1 on black";
+      $("cb-grade").textContent = grade(r.contrastBlack);
+
+      const notes = [];
+      if (!r.inGamut) notes.push("Outside the sRGB gamut — values shown are the closest displayable color (same lightness and hue, reduced chroma).");
+      if (r.alpha < 1) notes.push(`Alpha ${Math.round(r.alpha * 1000) / 10}% — contrast ratios assume the color composited opaque.`);
+      note.textContent = notes.length ? "ℹ " + notes.join(" ") : "";
+
+      for (const td of document.querySelectorAll("[data-k]")) {
+        td.textContent = r.formats[td.dataset.k];
+      }
+      result.hidden = false;
+    }
+
+    for (const td of document.querySelectorAll("[data-k]")) {
+      td.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(td.textContent);
+          const s = document.createElement("span");
+          s.className = "copied"; s.textContent = "copied";
+          td.appendChild(s);
+          setTimeout(() => s.remove(), 900);
+        } catch {}
+      });
+    }
+
+    input.addEventListener("input", render);
+    for (const b of document.querySelectorAll(".examples button")) {
+      b.addEventListener("click", () => { input.value = b.dataset.v; render(); input.focus(); });
+    }
+    render();
+  </script>
+</body>
+</html>
