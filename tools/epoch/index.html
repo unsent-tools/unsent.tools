@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Timestamp converter — unsent.tools</title>
+  <meta name="description" content="Convert between epoch timestamps (seconds, ms, µs, ns) and ISO 8601 dates, in UTC and your local timezone — entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .nowline { font-size: 0.9rem; color: var(--muted); margin-bottom: 1.5rem; }
+    .nowline code { font-family: var(--mono); color: var(--fg); cursor: pointer; }
+    .nowline code:hover { color: var(--accent); }
+    .note { margin-top: 0.6rem; color: var(--muted); font-size: 0.88rem; }
+    table.results td { word-break: break-all; }
+    td .rel { display: block; color: var(--muted); font-family: var(--sans); font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">timestamp converter</span>
+    </header>
+
+    <h1>Timestamp converter</h1>
+    <p class="lede">
+      Paste an epoch timestamp (seconds, milliseconds, microseconds, or
+      nanoseconds — detected automatically) or an ISO 8601 date, and see it in
+      every form: UTC, your local time, and relative to now. Nothing you type
+      leaves this page.
+    </p>
+
+    <p class="nowline">Current time: epoch <code id="now-s" title="click to copy"></code>
+      · <code id="now-iso" title="click to copy"></code></p>
+
+    <label for="ts">Timestamp</label>
+    <input type="text" id="ts" spellcheck="false" autocomplete="off"
+           autocapitalize="off" autocorrect="off"
+           placeholder="1692800000 or 2026-08-23T14:30:00Z or now" aria-describedby="hint err">
+    <div class="hint" id="hint">Epoch numbers may be negative (pre-1970) or fractional seconds.
+      ISO dates without a UTC offset are read in your local timezone.</div>
+    <div class="error" id="err" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-v="now">now</button>
+      <button type="button" data-v="1000000000">1 000 000 000</button>
+      <button type="button" data-v="1692800000000">epoch ms</button>
+      <button type="button" data-v="2026-08-23T14:30:00+02:00">ISO with offset</button>
+      <button type="button" data-v="2000-02-29">leap day</button>
+      <button type="button" data-v="-86400">before 1970</button>
+    </div>
+
+    <div class="note" id="note"></div>
+
+    <table class="results" id="out" hidden><tbody>
+      <tr><th>Epoch seconds</th><td data-k="s"></td></tr>
+      <tr><th>Epoch milliseconds</th><td data-k="ms"></td></tr>
+      <tr><th>UTC</th><td data-k="utc"></td></tr>
+      <tr><th>Local <span class="rel" data-k="offlabel"></span></th><td data-k="local"></td></tr>
+    </tbody></table>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { parseTimestamp, describe, formatOffset } from "./epoch.js";
+
+    const $ = (id) => document.getElementById(id);
+    const input = $("ts"), err = $("err"), out = $("out"), note = $("note");
+    const cell = (k) => document.querySelector(`[data-k="${k}"]`);
+    const localOffsetMin = -new Date().getTimezoneOffset();
+
+    function render() {
+      const raw = input.value.trim();
+      if (!raw) { out.hidden = true; err.textContent = ""; note.textContent = ""; return; }
+      let r, d;
+      try {
+        r = parseTimestamp(raw, { now: Date.now(), localOffsetMin });
+        d = describe(r.ms, { now: Date.now(), localOffsetMin });
+      } catch (e) {
+        out.hidden = true; note.textContent = "";
+        err.textContent = e.message;
+        return;
+      }
+      err.textContent = "";
+      const notes = [];
+      if (r.kind === "epoch" && r.warnings.length) notes.push(...r.warnings);
+      if (r.note) notes.push(r.note);
+      note.textContent = notes.length ? "ℹ " + notes.join(" · ") : "";
+
+      const secs = d.epochMillis / 1000;
+      cell("s").textContent = Number.isInteger(secs) ? String(secs) : secs.toFixed(3);
+      cell("ms").textContent = String(Math.trunc(d.epochMillis));
+      cell("utc").replaceChildren(document.createTextNode(d.isoUtc));
+      appendRel(cell("utc"), `${d.dayOfWeekUtc}${d.relative ? " · " + d.relative : ""}`);
+      cell("local").replaceChildren(document.createTextNode(d.isoLocal));
+      appendRel(cell("local"), d.dayOfWeekLocal);
+      cell("offlabel").textContent = formatOffset(localOffsetMin) === "Z" ? "(UTC)" : `(UTC${formatOffset(localOffsetMin)})`;
+      out.hidden = false;
+    }
+
+    function appendRel(td, text) {
+      const s = document.createElement("span");
+      s.className = "rel";
+      s.textContent = text;
+      td.appendChild(s);
+    }
+
+    function tickNow() {
+      const now = Date.now();
+      $("now-s").textContent = String(Math.floor(now / 1000));
+      $("now-iso").textContent = new Date(now).toISOString().replace(/\.\d{3}Z$/, "Z");
+      // keep a live input like "now" fresh too
+      if (input.value.trim().toLowerCase() === "now") render();
+    }
+    setInterval(tickNow, 1000);
+    tickNow();
+
+    for (const id of ["now-s", "now-iso"]) {
+      $(id).addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText($(id).textContent); } catch {}
+      });
+    }
+
+    input.addEventListener("input", render);
+    for (const b of document.querySelectorAll(".examples button")) {
+      b.addEventListener("click", () => { input.value = b.dataset.v; render(); input.focus(); });
+    }
+    render();
+  </script>
+</body>
+</html>

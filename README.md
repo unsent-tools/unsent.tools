@@ -56,6 +56,10 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   newline handling), character-level intraline highlights, collapsible unchanged
   runs, and unified diff export whose output is differential-tested to apply
   cleanly with `git apply`.
+- **epoch** — timestamp converter: epoch seconds/ms/µs/ns (unit autodetected by
+  magnitude; the near-1970 ambiguity is documented in a test) and strict ISO
+  8601 parsing with explicit-offset handling; all logic takes `now` and the
+  local UTC offset as parameters, so timezone behavior is fully testable.
 - **url** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested
