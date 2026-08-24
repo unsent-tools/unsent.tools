@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Text diff — unsent.tools</title>
+  <meta name="description" content="Compare two texts with a Myers diff — line-by-line changes, in-line character highlights, and unified diff export — entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 640px) { .panes { grid-template-columns: 1fr; } }
+    .panes textarea { min-height: 10rem; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 1rem; }
+    .toolbar button {
+      font: inherit; font-size: 0.9rem;
+      background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.35rem 0.75rem; cursor: pointer;
+    }
+    .toolbar button:hover { border-color: var(--accent); }
+    .stats { font-size: 0.9rem; }
+    .stats .plus { color: #1e7e34; font-weight: 600; }
+    .stats .minus { color: #c0392b; font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      .stats .plus { color: #57c46c; }
+      .stats .minus { color: #ff7b6b; }
+    }
+
+    .diff {
+      margin-top: 1.25rem;
+      border: 1px solid var(--border); border-radius: 10px;
+      overflow-x: auto;
+      font-family: var(--mono); font-size: 0.85rem; line-height: 1.5;
+      background: var(--card);
+    }
+    .diff table { border-collapse: collapse; width: 100%; }
+    .diff td { padding: 0 0.6rem; vertical-align: top; white-space: pre-wrap; word-break: break-all; }
+    .diff td.num {
+      text-align: right; color: var(--muted); user-select: none;
+      width: 1%; white-space: nowrap; border-right: 1px solid var(--border);
+      font-size: 0.78rem; padding-top: 0.12em;
+    }
+    .diff td.sign { width: 1%; user-select: none; color: var(--muted); padding: 0 0.35rem; }
+    tr.del td.code { background: rgba(220, 60, 40, 0.12); }
+    tr.ins td.code { background: rgba(40, 160, 70, 0.13); }
+    tr.del td.sign { color: #c0392b; }
+    tr.ins td.sign { color: #1e7e34; }
+    @media (prefers-color-scheme: dark) {
+      tr.del td.code { background: rgba(255, 100, 80, 0.14); }
+      tr.ins td.code { background: rgba(90, 220, 120, 0.13); }
+      tr.del td.sign { color: #ff7b6b; }
+      tr.ins td.sign { color: #57c46c; }
+    }
+    tr.del td.code mark { background: rgba(220, 60, 40, 0.35); color: inherit; border-radius: 2px; }
+    tr.ins td.code mark { background: rgba(40, 160, 70, 0.35); color: inherit; border-radius: 2px; }
+    @media (prefers-color-scheme: dark) {
+      tr.del td.code mark { background: rgba(255, 100, 80, 0.38); }
+      tr.ins td.code mark { background: rgba(90, 220, 120, 0.35); }
+    }
+    tr.fold td {
+      text-align: center; color: var(--muted); cursor: pointer;
+      background: var(--bg); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      font-family: var(--sans); font-size: 0.8rem; padding: 0.2rem 0;
+    }
+    tr.fold td:hover { color: var(--accent); }
+    .nonl { color: var(--muted); font-size: 0.75rem; font-family: var(--sans); }
+    .same { margin-top: 1.25rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap" style="max-width: 60rem">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">text diff</span>
+    </header>
+
+    <h1>Text diff</h1>
+    <p class="lede">
+      Compare two texts line by line — a proper Myers shortest-edit diff with
+      in-line character highlights and copyable unified output. Nothing you
+      paste leaves this page, which matters when what you're comparing is a
+      config file, a contract, or code you'd rather not upload to a diff site.
+    </p>
+
+    <div class="panes">
+      <div>
+        <label for="a">Original</label>
+        <textarea id="a" spellcheck="false" autocomplete="off" autocapitalize="off"
+                  autocorrect="off" placeholder="paste the first version…"></textarea>
+      </div>
+      <div>
+        <label for="b">Changed</label>
+        <textarea id="b" spellcheck="false" autocomplete="off" autocapitalize="off"
+                  autocorrect="off" placeholder="paste the second version…"></textarea>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button type="button" id="swap">⇄ swap</button>
+      <button type="button" id="example">load example</button>
+      <button type="button" id="copy" hidden>copy unified diff</button>
+      <span class="stats" id="stats"></span>
+    </div>
+    <div class="hint" id="note"></div>
+
+    <div id="out"></div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { diffLines, unifiedDiff, intraline } from "./diff.js";
+
+    const $ = (id) => document.getElementById(id);
+    const aIn = $("a"), bIn = $("b"), out = $("out"), stats = $("stats");
+    const copyBtn = $("copy"), note = $("note");
+    const FOLD_ABOVE = 8, FOLD_KEEP = 3;
+
+    function codeCell(text, segs, noNl) {
+      const td = document.createElement("td");
+      td.className = "code";
+      if (segs) {
+        for (const s of segs) {
+          if (s.changed) {
+            const m = document.createElement("mark");
+            m.textContent = s.text;
+            td.appendChild(m);
+          } else {
+            td.appendChild(document.createTextNode(s.text));
+          }
+        }
+      } else {
+        td.textContent = text;
+      }
+      if (text === "" && !segs) td.appendChild(document.createTextNode(" "));
+      if (noNl) {
+        const n = document.createElement("span");
+        n.className = "nonl";
+        n.textContent = " ⌦ no newline at end";
+        td.appendChild(n);
+      }
+      return td;
+    }
+
+    function opRow(op, segs) {
+      const tr = document.createElement("tr");
+      tr.className = op.type === "del" ? "del" : op.type === "ins" ? "ins" : "ctx";
+      const na = document.createElement("td"); na.className = "num";
+      na.textContent = op.aNum ?? "";
+      const nb = document.createElement("td"); nb.className = "num";
+      nb.textContent = op.bNum ?? "";
+      const sg = document.createElement("td"); sg.className = "sign";
+      sg.textContent = op.type === "del" ? "−" : op.type === "ins" ? "+" : "";
+      tr.append(na, nb, sg, codeCell(op.text, segs, op.noNl));
+      return tr;
+    }
+
+    // Attach intraline segments to del/ins runs: pair the i-th deleted line
+    // with the i-th inserted line of the same block.
+    function withIntraline(ops) {
+      const segMap = new Map();
+      let i = 0;
+      while (i < ops.length) {
+        if (ops[i].type !== "del") { i++; continue; }
+        const dels = [];
+        while (i < ops.length && ops[i].type === "del") dels.push(i++);
+        const inss = [];
+        while (i < ops.length && ops[i].type === "ins") inss.push(i++);
+        const n = Math.min(dels.length, inss.length);
+        for (let j = 0; j < n; j++) {
+          const r = intraline(ops[dels[j]].text, ops[inss[j]].text);
+          if (r) { segMap.set(dels[j], r.a); segMap.set(inss[j], r.b); }
+        }
+      }
+      return segMap;
+    }
+
+    function render() {
+      const aText = aIn.value, bText = bIn.value;
+      out.replaceChildren();
+      note.textContent = "";
+      if (aText === "" && bText === "") { stats.textContent = ""; copyBtn.hidden = true; return; }
+
+      const { ops, stats: st, nonMinimal } = diffLines(aText, bText);
+      stats.replaceChildren();
+      const plus = document.createElement("span");
+      plus.className = "plus"; plus.textContent = `+${st.additions}`;
+      const minus = document.createElement("span");
+      minus.className = "minus"; minus.textContent = ` −${st.deletions}`;
+      stats.append(plus, minus);
+      copyBtn.hidden = false;
+      if (nonMinimal) note.textContent = "The texts differ heavily, so a block-level diff is shown (guaranteed correct, not guaranteed shortest).";
+
+      if (st.additions === 0 && st.deletions === 0) {
+        const p = document.createElement("p");
+        p.className = "same";
+        p.textContent = "The two texts are identical.";
+        out.appendChild(p);
+        copyBtn.hidden = true;
+        return;
+      }
+
+      const segMap = withIntraline(ops);
+      const box = document.createElement("div");
+      box.className = "diff";
+      const table = document.createElement("table");
+      const tbody = document.createElement("tbody");
+      table.appendChild(tbody);
+      box.appendChild(table);
+
+      let i = 0;
+      while (i < ops.length) {
+        if (ops[i].type !== "equal") { tbody.appendChild(opRow(ops[i], segMap.get(i))); i++; continue; }
+        let j = i;
+        while (j < ops.length && ops[j].type === "equal") j++;
+        const run = j - i;
+        const atEdge = i === 0 || j === ops.length;
+        const keepTop = i === 0 ? 0 : FOLD_KEEP;
+        const keepBot = j === ops.length ? 0 : FOLD_KEEP;
+        if (run > FOLD_ABOVE && run > keepTop + keepBot + 1) {
+          for (let k = i; k < i + keepTop; k++) tbody.appendChild(opRow(ops[k]));
+          const hidden = ops.slice(i + keepTop, j - keepBot);
+          const fold = document.createElement("tr");
+          fold.className = "fold";
+          const td = document.createElement("td");
+          td.colSpan = 4;
+          td.textContent = `⋯ ${hidden.length} unchanged line${hidden.length === 1 ? "" : "s"} — click to show`;
+          fold.appendChild(td);
+          fold.addEventListener("click", () => {
+            const frag = document.createDocumentFragment();
+            for (const op of hidden) frag.appendChild(opRow(op));
+            fold.replaceWith(frag);
+          });
+          tbody.appendChild(fold);
+          for (let k = j - keepBot; k < j; k++) tbody.appendChild(opRow(ops[k]));
+        } else {
+          for (let k = i; k < j; k++) tbody.appendChild(opRow(ops[k]));
+        }
+        i = j;
+      }
+      out.appendChild(box);
+    }
+
+    copyBtn.addEventListener("click", async () => {
+      const patch = unifiedDiff(aIn.value, bIn.value, { aLabel: "a/text", bLabel: "b/text" });
+      try {
+        await navigator.clipboard.writeText(patch);
+        copyBtn.textContent = "copied ✓";
+      } catch {
+        copyBtn.textContent = "copy failed — clipboard blocked";
+      }
+      setTimeout(() => { copyBtn.textContent = "copy unified diff"; }, 1500);
+    });
+
+    $("swap").addEventListener("click", () => {
+      [aIn.value, bIn.value] = [bIn.value, aIn.value];
+      render();
+    });
+
+    $("example").addEventListener("click", () => {
+      aIn.value = [
+        "server {",
+        "  listen 80;",
+        "  server_name example.com;",
+        "  root /var/www/html;",
+        "  index index.html;",
+        "  location / {",
+        "    try_files $uri $uri/ =404;",
+        "  }",
+        "}",
+      ].join("\n") + "\n";
+      bIn.value = [
+        "server {",
+        "  listen 443 ssl;",
+        "  server_name example.com;",
+        "  root /var/www/site;",
+        "  index index.html;",
+        "  ssl_certificate /etc/ssl/cert.pem;",
+        "  location / {",
+        "    try_files $uri $uri/ =404;",
+        "  }",
+        "}",
+      ].join("\n") + "\n";
+      render();
+    });
+
+    let timer = null;
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(render, 120); };
+    aIn.addEventListener("input", schedule);
+    bIn.addEventListener("input", schedule);
+    render();
+  </script>
+</body>
+</html>

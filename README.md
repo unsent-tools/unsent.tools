@@ -52,6 +52,10 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   alg-none warning, HS256/384/512 verification via WebCrypto. Decoding is
   deliberately lenient (tolerates padding, non-canonical trailing bits);
   verification is byte-exact.
+- **diff** — text diff: Myers shortest-edit-script line diff (correct trailing-
+  newline handling), character-level intraline highlights, collapsible unchanged
+  runs, and unified diff export whose output is differential-tested to apply
+  cleanly with `git apply`.
 - **url** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested
