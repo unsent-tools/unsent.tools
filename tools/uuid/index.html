@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UUID / ULID inspector — unsent.tools</title>
+  <meta name="description" content="Decode UUIDs (v1–v8) and ULIDs: version, variant, embedded timestamps, MAC addresses, clock sequence. Generate v4, v7, and ULIDs. Entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .summary { margin-top: 1.2rem; }
+    .privacy {
+      margin-top: 0.9rem; padding: 0.6rem 0.9rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 6px; color: var(--fg);
+    }
+    .notes { color: var(--muted); font-size: 0.88rem; margin-top: 0.6rem; }
+    .fieldnote { display: block; color: var(--muted); font-family: var(--sans); font-size: 0.85rem; }
+    td.copyable { cursor: pointer; word-break: break-all; }
+    td.copyable:hover { color: var(--accent); }
+    .genrow { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.6rem; }
+    .genrow button {
+      font-family: var(--mono); font-size: 0.95rem; background: var(--card);
+      color: var(--fg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.45rem 0.9rem; cursor: pointer;
+    }
+    .genrow button:hover { border-color: var(--accent); }
+    h2 { font-size: 1.05rem; margin-top: 2rem; }
+    .copied-hint { color: var(--muted); font-size: 0.85rem; margin-top: 0.4rem; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">uuid / ulid inspector</span>
+    </header>
+
+    <h1>UUID / ULID inspector</h1>
+    <p class="lede">
+      Paste a UUID or ULID and see what it actually carries: version, variant,
+      and — for time-based kinds — the embedded creation timestamp, clock
+      sequence, and node/MAC address. Identifiers from production systems are
+      sensitive; here, nothing you paste leaves this page.
+    </p>
+
+    <label for="id">UUID or ULID</label>
+    <input type="text" id="id" spellcheck="false" autocomplete="off"
+           autocapitalize="off" autocorrect="off"
+           placeholder="c232ab00-9414-11ec-b3c8-9f6bdeced846 or 01AN4Z07BY79KA1307SR9X4MV3"
+           aria-describedby="hint err">
+    <div class="hint" id="hint">Accepts canonical UUIDs, {braced}, urn:uuid:…, bare 32-hex, and 26-char ULIDs.</div>
+    <div class="error" id="err" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-v="c232ab00-9414-11ec-b3c8-9f6bdeced846">v1 (RFC vector)</button>
+      <button type="button" data-v="919108f7-52d1-4320-9bac-f847db4148a8">v4</button>
+      <button type="button" data-v="017f22e2-79b0-7cc3-98c4-dc0c0c07398f">v7</button>
+      <button type="button" data-v="01AN4Z07BY79KA1307SR9X4MV3">ULID</button>
+      <button type="button" data-v="00000000-0000-0000-0000-000000000000">nil</button>
+    </div>
+
+    <p class="summary" id="summary" hidden></p>
+    <div class="privacy" id="privacy" hidden></div>
+    <div class="notes" id="notes" hidden></div>
+
+    <table class="results" id="fields" hidden><tbody></tbody></table>
+
+    <div id="repr-wrap" hidden>
+      <h2>Same 128 bits, other faces <span class="fieldnote">click a value to copy</span></h2>
+      <table class="results"><tbody id="reprs"></tbody></table>
+      <div class="copied-hint" id="copied"></div>
+    </div>
+
+    <h2>Generate</h2>
+    <div class="genrow">
+      <button type="button" id="gen4">UUID v4 (random)</button>
+      <button type="button" id="gen7">UUID v7 (time-ordered)</button>
+      <button type="button" id="genulid">ULID</button>
+    </div>
+    <div class="hint">Generated with your browser's <code>crypto.getRandomValues</code> and clock, then decoded above.</div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { parseInput, decodeUuid, decodeUlid, buildV4, buildV7, buildUlid, representations } from "./uuid.js";
+
+    const $ = (id) => document.getElementById(id);
+    const input = $("id"), err = $("err"), summary = $("summary"),
+          privacy = $("privacy"), notes = $("notes"), fields = $("fields"),
+          reprWrap = $("repr-wrap"), reprs = $("reprs"), copied = $("copied");
+
+    const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    function hideAll() {
+      for (const el of [summary, privacy, notes, fields, reprWrap]) el.hidden = true;
+    }
+
+    function row(label, value, detail) {
+      return `<tr><th>${esc(label)}</th><td>${esc(value)}${detail ? `<span class="fieldnote">${esc(detail)}</span>` : ""}</td></tr>`;
+    }
+
+    function render() {
+      const raw = input.value.trim();
+      err.textContent = "";
+      if (!raw) { hideAll(); return; }
+      let parsed;
+      try { parsed = parseInput(raw); }
+      catch (e) { hideAll(); err.textContent = e.message; return; }
+
+      const d = parsed.kind === "uuid" ? decodeUuid(parsed.hex) : decodeUlid(parsed.hex);
+
+      summary.hidden = false;
+      summary.textContent = d.summary;
+
+      privacy.hidden = !d.privacy;
+      if (d.privacy) privacy.textContent = "⚠ " + d.privacy;
+
+      const allNotes = (parsed.notes || []).concat(d.notes || []);
+      notes.hidden = allNotes.length === 0;
+      notes.textContent = allNotes.join(" ");
+
+      let rows = "";
+      if (parsed.kind === "uuid") {
+        if (!d.special) {
+          rows += row("Variant", d.variant.toUpperCase(), d.variantDetail);
+          if (d.version !== undefined) rows += row("Version", String(d.version));
+          for (const f of d.fields) rows += row(f.label, f.value, f.detail);
+        }
+      } else {
+        rows += row("Timestamp", d.iso, `${d.timestampMs} ms since 1970-01-01`);
+        rows += row("Randomness", d.randomness, "80 bits");
+      }
+      fields.hidden = !rows;
+      fields.tBodies[0].innerHTML = rows;
+
+      const r = representations(parsed.hex);
+      reprWrap.hidden = false;
+      reprs.innerHTML =
+        `<tr><th>UUID</th><td class="copyable">${esc(r.uuid)}</td></tr>` +
+        `<tr><th>ULID</th><td class="copyable">${esc(r.ulid)}</td></tr>` +
+        `<tr><th>Hex</th><td class="copyable">${esc(r.hex)}</td></tr>` +
+        `<tr><th>Bytes</th><td class="copyable">${esc(r.bytes)}</td></tr>` +
+        `<tr><th>Integer</th><td class="copyable">${esc(r.intBE)}</td></tr>`;
+    }
+
+    input.addEventListener("input", render);
+
+    document.querySelector(".examples").addEventListener("click", (e) => {
+      const v = e.target.dataset?.v;
+      if (v) { input.value = v; render(); }
+    });
+
+    reprs.addEventListener("click", async (e) => {
+      const td = e.target.closest("td.copyable");
+      if (!td) return;
+      try {
+        await navigator.clipboard.writeText(td.textContent);
+        copied.textContent = "Copied.";
+        setTimeout(() => { copied.textContent = ""; }, 1500);
+      } catch { copied.textContent = "Copy failed — select and copy manually."; }
+    });
+
+    const rand = (n) => [...crypto.getRandomValues(new Uint8Array(n))];
+    const show = (v) => { input.value = v; render(); };
+    $("gen4").addEventListener("click", () => {
+      const hex = buildV4(rand(16));
+      show(hex.replace(/^(.{8})(.{4})(.{4})(.{4})/, "$1-$2-$3-$4-"));
+    });
+    $("gen7").addEventListener("click", () => {
+      const hex = buildV7(Date.now(), rand(10));
+      show(hex.replace(/^(.{8})(.{4})(.{4})(.{4})/, "$1-$2-$3-$4-"));
+    });
+    $("genulid").addEventListener("click", () => show(buildUlid(Date.now(), rand(10))));
+  </script>
+</body>
+</html>

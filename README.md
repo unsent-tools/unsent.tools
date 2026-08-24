@@ -16,7 +16,10 @@ Principles:
 - **Correct.** Each tool's logic lives in a plain ES module (`*.js`) with a
   matching `*.test.js` that runs under Node's built-in test runner. No tool
   ships without passing tests. No build step: the same module the tests import is
-  the one the browser loads.
+  the one the browser loads. The method — differential testing against trusted
+  implementations, property tests, pinned RFC vectors, and the real bugs it
+  caught — is documented at
+  [unsent.tools/testing](https://unsent.tools/testing/).
 - **Small and legible.** Vanilla HTML/CSS/JS, no framework, no dependencies.
 
 ## Layout
@@ -70,6 +73,14 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   contrast ratios, and sRGB gamut checks with chroma-preserving clamping.
   OKLab conversion differential-tested against culori (2000 random colors,
   worst difference 4e-8).
+- **[uuid](https://unsent.tools/tools/uuid/)** — UUID / ULID inspector: version
+  and variant detection, embedded timestamps (v1/v6 Gregorian 100-ns, v7/ULID
+  Unix ms), clock sequence and node/MAC with a multicast-bit privacy check,
+  Crockford base32 with ambiguous-letter folding, cross-format views of the
+  same 128 bits, and local v4/v7/ULID generation. Field extraction
+  differential-tested against Python's `uuid` module; ULID decode
+  cross-checked against the reference `ulid` npm package; pinned RFC 9562
+  Appendix A test vectors.
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How these tools are tested — unsent.tools</title>
+  <meta name="description" content="The verification method behind unsent.tools: pure logic modules, differential testing against trusted implementations, pinned RFC vectors, and the bugs this caught.">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    h2 { font-size: 1.15rem; margin-top: 2.2rem; }
+    p, li { line-height: 1.6; }
+    table.results td { font-family: var(--sans); }
+    table.results td code, p code, li code { font-family: var(--mono); font-size: 0.9em; }
+    table.results th { vertical-align: top; }
+    .bug { margin: 1rem 0; }
+    .bug b { font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">how these are tested</span>
+    </header>
+
+    <h1>How these tools are tested</h1>
+    <p class="lede">
+      A converter that's wrong is worse than no converter: you trust its output
+      precisely because you couldn't do the conversion in your head. This page
+      is the standing answer to “why should I believe these tools?”
+    </p>
+
+    <h2>The method</h2>
+    <p>
+      Every tool keeps its logic in a plain ES module with no DOM access. The
+      page is a thin layer that wires inputs to that module; the module is what
+      gets tested, with Node's built-in <code>node:test</code>. As of this
+      writing: <b>9 tools, 148 tests</b>. The deploy script runs every suite
+      and refuses to publish if any test is red — there is no path to the
+      server that skips the tests.
+    </p>
+    <p>
+      Ordinary example-based tests are the floor, not the method. Wherever
+      possible each suite leans on one or more of these stronger checks:
+    </p>
+    <ul>
+      <li><b>Differential testing:</b> run the same inputs through an
+        independent, trusted implementation — a system binary, a standard
+        library, a reference package — and require byte-identical agreement,
+        typically over hundreds or thousands of random inputs. This is the
+        single most effective technique this project has found: it does not
+        share your misconceptions.</li>
+      <li><b>Property tests:</b> invariants that must hold for any input —
+        round-trips reconstruct the original exactly, encodings decode back,
+        outputs stay within proven bounds.</li>
+      <li><b>Pinned authoritative vectors:</b> test values taken from the
+        governing RFC or specification, committed verbatim with a citation.</li>
+    </ul>
+
+    <h2>What each tool is checked against</h2>
+    <table class="results"><tbody>
+      <tr><th>subnet</th><td>Hand-verified vectors for the edge prefixes (/0, /31 per RFC 3021, /32), rejection of non-contiguous masks, RFC 1918 classification. The JS 32-bit signed-shift traps are pinned in tests.</td></tr>
+      <tr><th>cron</th><td>Pinned plain-English descriptions, Vixie's dom/dow either-matches rule, leap days, short months, year rollover. Next-run computation is checked against hand-computed schedules.</td></tr>
+      <tr><th>jwt</th><td>HMAC-SHA-256/384/512 verification vectors cross-checked against <code>node:crypto</code>; tampered-payload rejection; a documenting test for the 2 discarded trailing bits in a base64url-encoded 256-bit MAC.</td></tr>
+      <tr><th>diff</th><td><b>Differential against <code>git apply</code></b>: generated unified diffs must patch A into B byte-exactly (60 random pairs plus trailing-newline edge cases). Reconstruction property over 500 seeded-random pairs; minimality proven against an independent LCS dynamic program.</td></tr>
+      <tr><th>epoch</th><td>Own strict ISO 8601 parser with round-trip rejection of impossible dates (Feb 30), leap-second messaging, and all time context passed explicitly so timezone behavior is pinned in tests (+02:00, −05:00) rather than inherited from the machine.</td></tr>
+      <tr><th>chmod</th><td><b>Differential against the real GNU <code>chmod</code> binary</b>: 336 expression × mode × file-type combinations applied to actual files and directories, plus an all-4096-modes round-trip. The oracle corrected two misread man-page semantics before ship.</td></tr>
+      <tr><th>color</th><td><b>Differential against <code>culori</code></b>: 2000 random colors through OKLab both ways, worst disagreement 3.7×10⁻⁸; parser agreement on sampled CSS strings; verified vectors pinned. WCAG contrast from the spec formula.</td></tr>
+      <tr><th>url</th><td><b>Differential against Node's <code>domainToUnicode</code></b> for the hand-written RFC 3492 punycode decoder; strict percent-decoding with error positions; form-semantics vectors.</td></tr>
+      <tr><th>uuid</th><td><b>Differential against Python's <code>uuid</code> module</b> (300 random UUIDs: variant, version, v1 timestamp/clock-sequence/node); ULID decode cross-checked against the reference <code>ulid</code> npm package; RFC 9562 Appendix A vectors pinned; 1000-value Crockford base32 round-trip; <code>crypto.randomUUID()</code> outputs must decode as v4/RFC.</td></tr>
+    </tbody></table>
+    <p>
+      Oracles used during development (like <code>culori</code> and
+      <code>ulid</code>) are installed once in a scratch directory, used to
+      verify, and never become dependencies — the verified values are pinned
+      into the committed tests, and the site itself remains dependency-free.
+    </p>
+
+    <h2>Bugs this actually caught</h2>
+    <p>The method only matters if it finds real errors before you do. A sample, kept honestly:</p>
+    <div class="bug"><b>The tamper test that couldn't fail.</b> The jwt suite's first “tampered signature” flipped the last base64url character of an HMAC — which only changes 2 discarded trailing bits (43 chars × 6 = 258 bits &gt; 256), so the signature still verified. The fix tampers the payload instead, and the leniency itself is now pinned by a documenting test.</div>
+    <div class="bug"><b>The gamma curve that wasn't symmetric.</b> <code>srgbToLinear</code> sent every negative channel down the linear branch (<code>c &lt;= 0.04045</code> is true for all negatives) while its inverse mirrored through the origin — so out-of-gamut round trips drifted in lightness (0.7 → 0.76). Caught by the culori differential.</div>
+    <div class="bug"><b>The punycode digit that went negative.</b> Decoding a digit with <code>c − 48 &lt; 10</code> accepts every character below “0”, since negative numbers are less than ten. Caught by malformed-input tests; ranges are now validated explicitly.</div>
+    <div class="bug"><b>The wrong test expectation.</b> A diff minimality check against an independent LCS program rejected the author's own hand-written expectation: the minimal diff of <code>8080</code> → <code>9090</code> keeps the two zeros and edits each digit separately. The oracle was right; the intuition wasn't.</div>
+    <div class="bug"><b>Two chmod semantics misread from the man page.</b> GNU chmod's <code>=</code> with an omitted “who” clears bits the umask masks (the umask limits only what gets set), and <code>=</code> on directories preserves setuid/setgid unless explicitly changed. Both surfaced only because the differential ran the real binary.</div>
+
+    <h2>What is not covered</h2>
+    <p>
+      Honesty requires the other column. The DOM glue in each page — event
+      wiring, rendering — is syntax-checked but not unit-tested; it is kept
+      deliberately thin so the tested module does all the thinking. Browser
+      rendering is verified by a human eyeball, not automation. And a test
+      suite, however adversarial, bounds confidence rather than proving
+      correctness — if you find a wrong answer, the
+      <a href="https://github.com/unsent-tools/unsent.tools/issues">issue tracker</a>
+      is open, and a failing input is the most valuable thing you can send.
+    </p>
+
+    <footer class="site">
+      <a href="../">← all tools</a> ·
+      <a href="https://github.com/unsent-tools/unsent.tools">source &amp; tests on GitHub</a>
+    </footer>
+  </div>
+</body>
+</html>
