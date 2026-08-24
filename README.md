@@ -60,6 +60,11 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   magnitude; the near-1970 ambiguity is documented in a test) and strict ISO
   8601 parsing with explicit-offset handling; all logic takes `now` and the
   local UTC offset as parameters, so timezone behavior is fully testable.
+- **[chmod](https://unsent.tools/tools/chmod/)** — Unix permission calculator:
+  octal ↔ symbolic (`rwsr-xr-x`, incl. s/S/t/T) ↔ plain English, chmod
+  expression evaluation (`u+x,go-w`, `a+X`, umask handling for omitted who,
+  GNU's preserve-setuid/setgid-on-directories rule) differential-tested
+  against the system's real GNU chmod, and footgun warnings.
 - **[color](https://unsent.tools/tools/color/)** — color converter: hex, named,
   rgb()/hsl()/hwb()/oklch()/oklab() in both legacy and modern syntax, WCAG 2
   contrast ratios, and sRGB gamut checks with chroma-preserving clamping.

@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>chmod calculator — unsent.tools</title>
+  <meta name="description" content="Convert Unix file permissions between octal, symbolic (rwxr-xr-x) and plain English, apply chmod expressions like u+x, and catch footguns — entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 560px) { .modes { grid-template-columns: 1fr; } }
+    .grid { border-collapse: collapse; margin: 1.2rem 0 0.4rem; }
+    .grid th, .grid td { padding: 0.35rem 0.9rem 0.35rem 0; text-align: left; font-weight: normal; }
+    .grid thead th { color: var(--muted); font-size: 0.85rem; }
+    .grid tbody th { color: var(--fg); }
+    .grid label { display: inline-flex; gap: 0.35rem; align-items: center; cursor: pointer; margin: 0; }
+    .grid input { width: auto; margin: 0; }
+    .dirline { margin: 0.6rem 0 1rem; }
+    .dirline label { display: inline-flex; gap: 0.4rem; align-items: center; cursor: pointer; }
+    .dirline input { width: auto; }
+    .english { margin: 1rem 0 0.4rem; padding-left: 1.2rem; }
+    .english li { margin: 0.15rem 0; }
+    .special { color: var(--muted); font-size: 0.9rem; padding-left: 1.2rem; }
+    .warn { color: var(--error); font-size: 0.9rem; margin-top: 0.6rem; }
+    .applyrow { display: flex; gap: 0.6rem; align-items: flex-start; margin-top: 0.4rem; }
+    .applyrow input { flex: 1; }
+    .applyrow button {
+      font-family: var(--mono); font-size: 0.95rem; background: var(--card);
+      color: var(--fg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.45rem 0.9rem; cursor: pointer;
+    }
+    .applyrow button:hover { border-color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">chmod calculator</span>
+    </header>
+
+    <h1>chmod calculator</h1>
+    <p class="lede">
+      Octal, symbolic, checkboxes, and plain English — four views of the same
+      Unix file mode, always in sync. Apply chmod expressions like
+      <code>u+x,go-w</code> and see exactly what changes. Nothing you type
+      leaves this page.
+    </p>
+
+    <div class="modes">
+      <div>
+        <label for="octal">Octal</label>
+        <input type="text" id="octal" spellcheck="false" autocomplete="off" placeholder="755" value="644">
+      </div>
+      <div>
+        <label for="sym">Symbolic</label>
+        <input type="text" id="sym" spellcheck="false" autocomplete="off" placeholder="rwxr-xr-x or an ls -l line">
+      </div>
+    </div>
+    <div class="error" id="err" role="alert"></div>
+
+    <table class="grid" aria-label="permission checkboxes">
+      <thead><tr><th></th><th>read</th><th>write</th><th>execute</th><th>special</th></tr></thead>
+      <tbody>
+        <tr><th>Owner</th>
+          <td><label><input type="checkbox" data-bit="256"></label></td>
+          <td><label><input type="checkbox" data-bit="128"></label></td>
+          <td><label><input type="checkbox" data-bit="64"></label></td>
+          <td><label><input type="checkbox" data-bit="2048"> setuid</label></td></tr>
+        <tr><th>Group</th>
+          <td><label><input type="checkbox" data-bit="32"></label></td>
+          <td><label><input type="checkbox" data-bit="16"></label></td>
+          <td><label><input type="checkbox" data-bit="8"></label></td>
+          <td><label><input type="checkbox" data-bit="1024"> setgid</label></td></tr>
+        <tr><th>Others</th>
+          <td><label><input type="checkbox" data-bit="4"></label></td>
+          <td><label><input type="checkbox" data-bit="2"></label></td>
+          <td><label><input type="checkbox" data-bit="1"></label></td>
+          <td><label><input type="checkbox" data-bit="512"> sticky</label></td></tr>
+      </tbody>
+    </table>
+
+    <div class="dirline">
+      <label><input type="checkbox" id="isdir"> this is a directory (changes what the bits mean)</label>
+    </div>
+
+    <label for="expr">Apply a chmod expression</label>
+    <div class="applyrow">
+      <input type="text" id="expr" spellcheck="false" autocomplete="off" placeholder="u+x,go-w  or  a=r  or  a+X">
+      <button type="button" id="apply">apply</button>
+    </div>
+    <div class="hint">Same syntax as <code>chmod</code>: who (u g o a), op (+ − =), perms (r w x X s t),
+      comma-separated. Verified against GNU chmod.</div>
+    <div class="error" id="exprerr" role="alert"></div>
+
+    <ul class="english" id="english"></ul>
+    <ul class="special" id="special"></ul>
+    <div class="warn" id="warn" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-oct="644">644</button>
+      <button type="button" data-oct="755">755</button>
+      <button type="button" data-oct="600">600</button>
+      <button type="button" data-oct="4755">4755 setuid</button>
+      <button type="button" data-oct="1777">1777 /tmp</button>
+      <button type="button" data-oct="666">666 footgun</button>
+    </div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { parseOctal, formatOctal, parseSymbolic, formatSymbolic, applySymbolic, describe, warnings }
+      from "./chmod.js";
+
+    const $ = (id) => document.getElementById(id);
+    const octal = $("octal"), sym = $("sym"), err = $("err");
+    const boxes = [...document.querySelectorAll("[data-bit]")];
+    let mode = 0o644;
+
+    function render(source) {
+      err.textContent = "";
+      if (source !== "octal") octal.value = formatOctal(mode);
+      if (source !== "sym") sym.value = formatSymbolic(mode);
+      for (const b of boxes) b.checked = (mode & +b.dataset.bit) !== 0;
+      const isDir = $("isdir").checked;
+      const d = describe(mode, { isDir });
+      $("english").replaceChildren(...d.lines.map((t) => {
+        const li = document.createElement("li"); li.textContent = t; return li;
+      }));
+      $("special").replaceChildren(...d.special.map((t) => {
+        const li = document.createElement("li"); li.textContent = "ℹ " + t; return li;
+      }));
+      const w = warnings(mode, { isDir });
+      $("warn").textContent = w.length ? "⚠ " + w.join(" ") : "";
+    }
+
+    octal.addEventListener("input", () => {
+      try { mode = parseOctal(octal.value); }
+      catch (e) { err.textContent = octal.value.trim() ? e.message : ""; return; }
+      render("octal");
+    });
+    sym.addEventListener("input", () => {
+      try { mode = parseSymbolic(sym.value); }
+      catch (e) { err.textContent = sym.value.trim() ? e.message : ""; return; }
+      render("sym");
+    });
+    for (const b of boxes) b.addEventListener("change", () => {
+      mode = b.checked ? mode | +b.dataset.bit : mode & ~+b.dataset.bit;
+      render("boxes");
+    });
+    $("isdir").addEventListener("change", () => render("dir"));
+
+    function apply() {
+      const e = $("exprerr");
+      e.textContent = "";
+      if (!$("expr").value.trim()) return;
+      try { mode = applySymbolic($("expr").value, mode, { isDir: $("isdir").checked }); }
+      catch (ex) { e.textContent = ex.message; return; }
+      render("expr");
+    }
+    $("apply").addEventListener("click", apply);
+    $("expr").addEventListener("keydown", (ev) => { if (ev.key === "Enter") apply(); });
+
+    for (const b of document.querySelectorAll(".examples button")) {
+      b.addEventListener("click", () => { mode = parseOctal(b.dataset.oct); render("example"); });
+    }
+    render("init");
+  </script>
+</body>
+</html>
