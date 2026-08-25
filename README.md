@@ -84,6 +84,13 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   differential-tested against Python's `uuid` module; ULID decode
   cross-checked against the reference `ulid` npm package; pinned RFC 9562
   Appendix A test vectors.
+- **[hash](https://unsent.tools/tools/hash/)** — hash calculator: CRC-32, MD5
+  (own RFC 1321 implementation — WebCrypto has none), SHA-1/256/384/512 via
+  WebCrypto, and RFC 2104 HMAC for all five, over text (UTF-8, optional
+  trailing newline to match `echo | md5sum`) or files; hex/Base64 output and
+  an expected-checksum comparator. Differential-tested against node:crypto,
+  node:zlib, and the coreutils `md5sum`/`sha*sum` binaries; pinned RFC 1321 /
+  FIPS 180 / RFC 2202 / RFC 4231 vectors.
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested

@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hash calculator — unsent.tools</title>
+  <meta name="description" content="MD5, SHA-1, SHA-256, SHA-384, SHA-512, CRC-32 and HMAC of text or files, computed entirely in your browser. Compare against an expected checksum.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-top: 0.6rem; }
+    .row label { margin: 0; display: inline-flex; align-items: center; gap: 0.4rem; font-weight: normal; }
+    .row input[type="checkbox"], .row input[type="radio"] { accent-color: var(--accent); }
+    .filebar { margin-top: 1rem; }
+    .filebar input[type="file"] { color: var(--muted); font-size: 0.9rem; max-width: 100%; }
+    .filenote { color: var(--muted); font-size: 0.88rem; margin-top: 0.3rem; }
+    td.copyable { cursor: pointer; word-break: break-all; font-family: var(--mono); }
+    td.copyable:hover { color: var(--accent); }
+    tr.matched th { color: #2e8b57; }
+    tr.matched td { color: #2e8b57; font-weight: 600; }
+    .fieldnote { display: block; color: var(--muted); font-family: var(--sans); font-size: 0.85rem; }
+    .verdict { margin-top: 0.5rem; font-size: 0.95rem; }
+    .verdict.ok { color: #2e8b57; }
+    .verdict.bad { color: var(--error); }
+    @media (prefers-color-scheme: dark) {
+      tr.matched th, tr.matched td, .verdict.ok { color: #5fd68f; }
+    }
+    h2 { font-size: 1.05rem; margin-top: 2rem; }
+    .notes { color: var(--muted); font-size: 0.88rem; margin-top: 1rem; }
+    .copied-hint { color: var(--muted); font-size: 0.85rem; margin-top: 0.4rem; min-height: 1.2em; }
+    #key { font-family: var(--mono); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">hash calculator</span>
+    </header>
+
+    <h1>Hash calculator</h1>
+    <p class="lede">
+      CRC-32, MD5, SHA-1, SHA-256/384/512 and HMAC of text or a file —
+      computed with your browser's own crypto, so the passwords, tokens, and
+      documents people habitually paste into "online hash generators" never
+      leave this page.
+    </p>
+
+    <label for="msg">Text to hash</label>
+    <textarea id="msg" rows="5" spellcheck="false" autocomplete="off"
+              placeholder="Type or paste text…" aria-describedby="hint"></textarea>
+    <div class="row">
+      <label><input type="checkbox" id="nl"> append trailing newline
+        <span class="hint" style="margin:0">(what <code>echo</code> pipes into <code>md5sum</code>)</span></label>
+      <span class="hint" style="margin:0">Text is hashed as UTF-8.</span>
+    </div>
+
+    <div class="filebar">
+      <label for="file">…or hash a file</label>
+      <input type="file" id="file">
+      <div class="filenote" id="filenote" hidden></div>
+    </div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-v="hello world">hello world</button>
+      <button type="button" data-v="The quick brown fox jumps over the lazy dog">quick brown fox</button>
+      <button type="button" data-v="abc">abc</button>
+    </div>
+
+    <h2>Digests <span class="fieldnote">click a value to copy</span></h2>
+    <div class="row">
+      <label><input type="radio" name="fmt" value="hex" checked> hex</label>
+      <label><input type="radio" name="fmt" value="base64"> Base64</label>
+    </div>
+    <table class="results" id="out"><tbody></tbody></table>
+    <div class="copied-hint" id="copied"></div>
+
+    <h2>Compare against an expected checksum</h2>
+    <label for="expect">Expected digest (hex or Base64 — case, spaces and colons ignored)</label>
+    <input type="text" id="expect" spellcheck="false" autocomplete="off"
+           placeholder="e.g. b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9">
+    <div class="verdict" id="verdict"></div>
+
+    <h2>HMAC (keyed hash)</h2>
+    <label for="key">Secret key (UTF-8 text; leave empty for plain hashes above)</label>
+    <input type="text" id="key" spellcheck="false" autocomplete="off"
+           placeholder="secret key…">
+    <div class="hint">With a key, the table above shows HMAC-MD5 / HMAC-SHA-* of the same message instead (CRC-32 has no HMAC).</div>
+
+    <div class="notes">
+      MD5 and SHA-1 are fine as integrity checksums against accidental
+      corruption, but both are cryptographically broken: collisions can be
+      manufactured, so don't use them for signatures or fingerprinting
+      attacker-supplied data. CRC-32 is only an error-detection code — it is
+      trivially forgeable and not a cryptographic hash at all. Files are
+      hashed in memory in your browser; very large files (hundreds of MB) may
+      be slow or fail, but they still never leave your machine.
+    </div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { ALGOS, utf8Bytes, bytesToHex, bytesToBase64, crc32, digest, hmac, compareDigest }
+      from "./hash.js";
+
+    const $ = (id) => document.getElementById(id);
+    const msg = $("msg"), nl = $("nl"), file = $("file"), filenote = $("filenote"),
+          out = $("out"), copied = $("copied"), expect = $("expect"),
+          verdict = $("verdict"), key = $("key");
+
+    const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    let fileBytes = null;   // Uint8Array when a file is loaded
+    let gen = 0;            // render generation: drop stale async results
+    let currentHex = {};    // algoId -> hex string, for compare
+
+    const ALGO_NOTE = { md5: "broken for security; checksum only",
+                        sha1: "broken for security; checksum only",
+                        crc32: "error-detection code, not a hash" };
+
+    function messageBytes() {
+      if (fileBytes) return fileBytes;
+      let text = msg.value;
+      if (nl.checked) text += "\n";
+      return utf8Bytes(text);
+    }
+
+    async function render() {
+      const my = ++gen;
+      const bytes = messageBytes();
+      const keyText = key.value;
+      const fmt = document.querySelector('input[name="fmt"]:checked').value;
+      const useHmac = keyText.length > 0;
+
+      const rows = [];
+      const hexMap = {};
+      for (const { id, label, bits } of ALGOS) {
+        let raw, shownLabel = label;
+        if (id === "crc32") {
+          if (useHmac) continue;
+          const hexVal = crc32(bytes).toString(16).padStart(8, "0");
+          hexMap[id] = hexVal;
+          raw = Uint8Array.from(hexVal.match(/../g), (h) => parseInt(h, 16));
+        } else {
+          raw = useHmac ? await hmac(id, utf8Bytes(keyText), bytes)
+                        : await digest(id, bytes);
+          if (my !== gen) return; // stale
+          hexMap[id] = bytesToHex(raw);
+          if (useHmac) shownLabel = "HMAC-" + label;
+        }
+        const shown = fmt === "hex" ? hexMap[id] : bytesToBase64(raw);
+        const note = useHmac ? "" : ALGO_NOTE[id] || "";
+        rows.push(`<tr data-algo="${id}"><th>${esc(shownLabel)}<span class="fieldnote">${bits} bits${note ? " · " + esc(note) : ""}</span></th><td class="copyable">${esc(shown)}</td></tr>`);
+      }
+      if (my !== gen) return;
+      currentHex = hexMap;
+      out.tBodies[0].innerHTML = rows.join("");
+      renderCompare();
+    }
+
+    function renderCompare() {
+      for (const tr of out.tBodies[0].rows) tr.classList.remove("matched");
+      verdict.textContent = "";
+      verdict.className = "verdict";
+      const raw = expect.value.trim();
+      if (!raw) return;
+      const r = compareDigest(raw, currentHex);
+      if (!r) {
+        verdict.textContent = "That doesn't look like a hex or Base64 digest.";
+        return;
+      }
+      if (r.matches.length) {
+        const names = r.matches.map((id) => ALGOS.find((a) => a.id === id).label);
+        verdict.textContent = `✓ Matches ${names.join(", ")} of the current input.`;
+        verdict.classList.add("ok");
+        for (const id of r.matches) {
+          const tr = out.querySelector(`tr[data-algo="${id}"]`);
+          if (tr) tr.classList.add("matched");
+        }
+      } else {
+        verdict.textContent = `✗ No match — not the ${r.kind} form of any digest of the current input.`;
+        verdict.classList.add("bad");
+      }
+    }
+
+    msg.addEventListener("input", () => {
+      if (fileBytes) clearFile();
+      render();
+    });
+    nl.addEventListener("change", render);
+    key.addEventListener("input", render);
+    expect.addEventListener("input", renderCompare);
+    for (const r of document.querySelectorAll('input[name="fmt"]')) r.addEventListener("change", render);
+
+    function clearFile() {
+      fileBytes = null;
+      file.value = "";
+      filenote.hidden = true;
+    }
+
+    file.addEventListener("change", async () => {
+      const f = file.files[0];
+      if (!f) { clearFile(); render(); return; }
+      filenote.hidden = false;
+      filenote.textContent = `Reading ${f.name}…`;
+      try {
+        fileBytes = new Uint8Array(await f.arrayBuffer());
+        filenote.textContent = `Hashing file: ${f.name} (${f.size.toLocaleString()} bytes). Text box is ignored while a file is loaded — edit it to go back to text.`;
+      } catch (e) {
+        clearFile();
+        filenote.hidden = false;
+        filenote.textContent = `Could not read file: ${e.message}`;
+      }
+      render();
+    });
+
+    document.querySelector(".examples").addEventListener("click", (e) => {
+      const v = e.target.dataset?.v;
+      if (v !== undefined) { clearFile(); msg.value = v; render(); }
+    });
+
+    out.addEventListener("click", async (e) => {
+      const td = e.target.closest("td.copyable");
+      if (!td) return;
+      try {
+        await navigator.clipboard.writeText(td.textContent);
+        copied.textContent = "Copied.";
+        setTimeout(() => { copied.textContent = ""; }, 1500);
+      } catch { copied.textContent = "Copy failed — select and copy manually."; }
+    });
+
+    render();
+  </script>
+</body>
+</html>
