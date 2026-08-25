@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Number base converter — unsent.tools</title>
+  <meta name="description" content="Convert integers between binary, octal, decimal, hex and any base 2–36 at arbitrary precision, with two's-complement views, byte order, and bit properties. Entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .inrow { display: flex; gap: 0.8rem; align-items: flex-end; flex-wrap: wrap; }
+    .inrow > div:first-child { flex: 1; min-width: 240px; }
+    select {
+      font-family: var(--mono); font-size: 1rem; background: var(--card);
+      color: var(--fg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.55rem 0.6rem;
+    }
+    td.copyable { cursor: pointer; word-break: break-all; font-family: var(--mono); }
+    td.copyable:hover { color: var(--accent); }
+    .fieldnote { display: block; color: var(--muted); font-family: var(--sans); font-size: 0.85rem; }
+    h2 { font-size: 1.05rem; margin-top: 2rem; }
+    .notes { color: var(--muted); font-size: 0.88rem; margin-top: 0.8rem; }
+    .copied-hint { color: var(--muted); font-size: 0.85rem; margin-top: 0.4rem; min-height: 1.2em; }
+    .customrow { display: flex; gap: 0.6rem; align-items: center; margin-top: 0.8rem; }
+    table.results td.na { color: var(--muted); font-family: var(--sans); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">number base converter</span>
+    </header>
+
+    <h1>Number base converter</h1>
+    <p class="lede">
+      Integers in binary, octal, decimal, hex, or any base up to 36 — at
+      arbitrary precision, so 256-bit hashes and 64-bit flags don't lose
+      digits. With two's-complement views at every standard width, byte
+      order, and bit properties. Nothing you type leaves this page.
+    </p>
+
+    <div class="inrow">
+      <div>
+        <label for="num">Number</label>
+        <input type="text" id="num" spellcheck="false" autocomplete="off"
+               autocapitalize="off" autocorrect="off"
+               placeholder="0xdead_beef, 0b1010, 0o755, -42, ff…" aria-describedby="hint err">
+      </div>
+      <div>
+        <label for="inbase">Input base</label>
+        <select id="inbase">
+          <option value="auto" selected>auto (prefix)</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint" id="hint">Auto mode: <code>0x</code> hex, <code>0o</code> octal, <code>0b</code> binary, otherwise decimal. Underscores and spaces between digits are ignored.</div>
+    <div class="error" id="err" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-v="0xdead_beef">0xdead_beef</button>
+      <button type="button" data-v="255">255</button>
+      <button type="button" data-v="-42">-42</button>
+      <button type="button" data-v="0o755">0o755</button>
+      <button type="button" data-v="0b1010_1010">0b1010_1010</button>
+      <button type="button" data-v="18446744073709551615">2⁶⁴−1</button>
+    </div>
+
+    <div id="results" hidden>
+      <h2>Conversions <span class="fieldnote">click a value to copy (copies without grouping)</span></h2>
+      <table class="results"><tbody id="conv"></tbody></table>
+      <div class="customrow">
+        <label for="outbase" style="margin:0">Custom base:</label>
+        <select id="outbase"></select>
+        <span id="customval" class="copyable" style="font-family:var(--mono); word-break:break-all; cursor:pointer"></span>
+      </div>
+      <div class="copied-hint" id="copied"></div>
+
+      <h2>Properties</h2>
+      <table class="results"><tbody id="props"></tbody></table>
+
+      <h2>Two's complement <span class="fieldnote">how this value is stored as a fixed-width signed integer</span></h2>
+      <table class="results"><tbody id="twos"></tbody></table>
+      <div class="notes" id="twosnote"></div>
+    </div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { parseNumber, toBase, grouped, bitLength, popcount, fits, twos, signedRead, bytes }
+      from "./base.js";
+
+    const $ = (id) => document.getElementById(id);
+    const num = $("num"), inbase = $("inbase"), err = $("err"), results = $("results"),
+          conv = $("conv"), props = $("props"), twosT = $("twos"), twosnote = $("twosnote"),
+          outbase = $("outbase"), customval = $("customval"), copied = $("copied");
+
+    const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    for (let b = 2; b <= 36; b++) {
+      inbase.add(new Option(`base ${b}`, String(b)));
+      outbase.add(new Option(`base ${b}`, String(b)));
+    }
+    outbase.value = "36";
+
+    let current = null; // BigInt of the last good parse
+
+    function row(label, valuePlain, valueShown, detail) {
+      return `<tr><th>${esc(label)}</th><td class="copyable" data-copy="${esc(valuePlain)}">${esc(valueShown)}${detail ? `<span class="fieldnote">${esc(detail)}</span>` : ""}</td></tr>`;
+    }
+
+    function render() {
+      err.textContent = "";
+      const raw = num.value;
+      if (!raw.trim()) { results.hidden = true; current = null; return; }
+      let p;
+      try { p = parseNumber(raw, inbase.value); }
+      catch (e) { results.hidden = true; current = null; err.textContent = e.message; return; }
+      current = p.value;
+      const v = p.value;
+      results.hidden = false;
+
+      const rows = [];
+      for (const [label, base, prefix] of [["Decimal", 10, ""], ["Hex", 16, "0x"], ["Octal", 8, "0o"], ["Binary", 2, "0b"]]) {
+        const plain = toBase(v, base);
+        const shown = (plain.startsWith("-") ? "-" + prefix + grouped(plain.slice(1), base) : prefix + grouped(plain, base));
+        const copyable = plain.startsWith("-") ? "-" + prefix + plain.slice(1) : prefix + plain;
+        rows.push(row(label, copyable, shown, p.notes.length && base === p.base ? p.notes.join(" ") : ""));
+      }
+      conv.innerHTML = rows.join("");
+      renderCustom();
+
+      const f = fits(v);
+      const bl = bitLength(v);
+      props.innerHTML =
+        row("Bit length", String(bl), String(bl), v < 0n ? "of the magnitude" : "") +
+        row("Set bits (popcount)", String(popcount(v)), String(popcount(v)), v < 0n ? "of the magnitude" : "") +
+        row("Bytes (big-endian)", bytes(v).join(" "), (v < 0n ? "− " : "") + bytes(v).join(" "), "") +
+        row("Bytes (little-endian)", bytes(v).reverse().join(" "), (v < 0n ? "− " : "") + bytes(v).reverse().join(" "), "") +
+        row("Fits in", "", fitText(f), "smallest standard width");
+
+      const trows = [];
+      let anySignedRead = false;
+      for (const w of [8, 16, 32, 64, 128]) {
+        const t = twos(v, w);
+        if (!t) {
+          trows.push(`<tr><th>int${w}</th><td class="na">doesn't fit a signed ${w}-bit integer</td></tr>`);
+          continue;
+        }
+        const sr = v >= 0n ? signedRead(v, w) : null;
+        const readNote = sr !== null && sr !== v ? `read as signed int${w}, this pattern means ${sr}` : "";
+        if (readNote) anySignedRead = true;
+        trows.push(row(`int${w}`, "0x" + t.hex, "0x" + grouped(t.hex, 16), readNote));
+      }
+      twosT.innerHTML = trows.join("");
+      twosnote.textContent = anySignedRead
+        ? "Rows where the top bit is set: the same bit pattern is a different (negative) number when read as signed."
+        : (v < 0n ? "Negative values are stored as the pattern shown; the hex above is what a debugger or memory dump would show." : "");
+    }
+
+    function fitText(f) {
+      const parts = [];
+      parts.push(f.unsigned ? `uint${f.unsigned}` : "no unsigned width ≤ 128");
+      parts.push(f.signed ? `int${f.signed}` : "no signed width ≤ 128");
+      return parts.join(" · ");
+    }
+
+    function renderCustom() {
+      if (current === null) return;
+      customval.textContent = toBase(current, Number(outbase.value));
+      customval.dataset.copy = customval.textContent;
+    }
+
+    num.addEventListener("input", render);
+    inbase.addEventListener("change", render);
+    outbase.addEventListener("change", renderCustom);
+
+    document.querySelector(".examples").addEventListener("click", (e) => {
+      const v = e.target.dataset?.v;
+      if (v) { num.value = v; inbase.value = "auto"; render(); }
+    });
+
+    document.addEventListener("click", async (e) => {
+      const el = e.target.closest("[data-copy], td.copyable");
+      if (!el) return;
+      const text = el.dataset?.copy ?? el.textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        copied.textContent = `Copied: ${text.length > 60 ? text.slice(0, 57) + "…" : text}`;
+        setTimeout(() => { copied.textContent = ""; }, 1500);
+      } catch { copied.textContent = "Copy failed — select and copy manually."; }
+    });
+  </script>
+</body>
+</html>

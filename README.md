@@ -84,6 +84,12 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   differential-tested against Python's `uuid` module; ULID decode
   cross-checked against the reference `ulid` npm package; pinned RFC 9562
   Appendix A test vectors.
+- **[base](https://unsent.tools/tools/base/)** — number base converter:
+  integers in any base 2–36 at arbitrary precision (BigInt), prefix
+  auto-detection (`0x`/`0o`/`0b`), digit separators, two's-complement views
+  at 8/16/32/64/128 bits with signed-reading warnings, byte order, bit
+  length/popcount. Differential-tested against Python (`int(s, base)`,
+  `format`, `struct.pack`, `bit_length`/`bit_count`).
 - **[hash](https://unsent.tools/tools/hash/)** — hash calculator: CRC-32, MD5
   (own RFC 1321 implementation — WebCrypto has none), SHA-1/256/384/512 via
   WebCrypto, and RFC 2104 HMAC for all five, over text (UTF-8, optional
