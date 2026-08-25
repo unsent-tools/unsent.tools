@@ -97,6 +97,14 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   an expected-checksum comparator. Differential-tested against node:crypto,
   node:zlib, and the coreutils `md5sum`/`sha*sum` binaries; pinned RFC 1321 /
   FIPS 180 / RFC 2202 / RFC 4231 vectors.
+- **[cert](https://unsent.tools/tools/cert/)** — certificate decoder: X.509 /
+  TLS certificates (single or whole chains) decoded from PEM or bare base64 —
+  subject/issuer with full RFC 2253 formatting, validity with expiry status,
+  RSA/EC/Ed25519 key details, SANs, key usage, EKU, AIA, CRL points, SCTs,
+  SHA-256/SHA-1 fingerprints — plus warnings for weak signature hashes,
+  small keys, missing SANs, and over-long validity. Own DER parser;
+  differential-tested against `openssl x509` across generated certificates,
+  with the site's own production chain pinned as a fixture.
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested

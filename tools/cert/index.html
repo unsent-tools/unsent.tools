@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Certificate decoder — unsent.tools</title>
+  <meta name="description" content="Decode X.509 / TLS certificates: subject, issuer, validity, SANs, key type, extensions, fingerprints. Entirely in your browser — paste a cert, nothing is sent anywhere.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    textarea {
+      width: 100%; min-height: 11rem; resize: vertical; font-family: var(--mono);
+      font-size: 0.82rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem;
+      box-sizing: border-box;
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
+    .cert-card {
+      margin-top: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; background: var(--card);
+    }
+    .cert-card h2 { margin: 0 0 0.2rem; font-size: 1.02rem; }
+    .status { font-size: 0.9rem; margin-bottom: 0.6rem; }
+    .status.valid { color: var(--ok, #3a9d5d); }
+    .status.expired, .status.not-yet-valid { color: var(--bad, #c94f4f); }
+    .warn {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--bad, #c94f4f);
+      border-radius: 6px;
+    }
+    .note {
+      margin: 0.6rem 0; color: var(--muted); font-size: 0.88rem;
+    }
+    .skipped {
+      margin: 0.8rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 6px;
+    }
+    table.results { margin-top: 0.5rem; }
+    table.results td { word-break: break-all; }
+    .extname { white-space: nowrap; }
+    .crit { color: var(--bad, #c94f4f); font-size: 0.8rem; }
+    h3 { font-size: 0.92rem; margin: 1rem 0 0.2rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">certificate decoder</span>
+    </header>
+
+    <h1>Certificate decoder</h1>
+    <p class="lede">
+      Paste a PEM certificate — or a whole chain — and see what's inside:
+      subject, issuer, validity, key type, alternative names, extensions,
+      fingerprints. Certificates get pasted into server-side decoders all the
+      time; they are public-ish, but the habit is bad and the metadata is
+      nobody's business. Here, nothing you paste leaves this page.
+    </p>
+
+    <label for="pem">PEM certificate(s)</label>
+    <textarea id="pem" spellcheck="false" autocomplete="off" autocapitalize="off"
+              placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDhzCCAw2gAwIBAgISBXv1…&#10;-----END CERTIFICATE-----"
+              aria-describedby="hint err"></textarea>
+    <div class="hint" id="hint">Accepts one or more <code>BEGIN CERTIFICATE</code> blocks, or bare base64 DER. Private keys and CSRs are recognised and refused.</div>
+    <div class="error" id="err" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" id="ex-site">this site's certificate</button>
+      <button type="button" id="ex-clear">clear</button>
+    </div>
+
+    <div id="skipped" class="skipped" hidden></div>
+    <div id="out"></div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <template id="site-cert">
+-----BEGIN CERTIFICATE-----
+MIIDhzCCAw2gAwIBAgISBXv1OODIUjDAhgBLTRmXRFLGMAoGCCqGSM49BAMDMDMx
+CzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZ
+RTIwHhcNMjYwODIzMTg0MjEwWhcNMjYxMTIxMTg0MjA5WjAXMRUwEwYDVQQDEwx1
+bnNlbnQudG9vbHMwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQvenjGsPYT5/eB
+W9UdNyUMpQgGppI/Xpa0DEzuVQO1F+vLItqp36+XMp2goRah+W6vMXcXkYykb8VE
+a6NmIKh1o4ICGzCCAhcwDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUF
+BwMBMAwGA1UdEwEB/wQCMAAwHQYDVR0OBBYEFIRvNIJo59Ji/0VM2R1IUM5ehT70
+MB8GA1UdIwQYMBaAFLlZ8o7PIvCG0zdI/3YUGLqC2FWHMDMGCCsGAQUFBwEBBCcw
+JTAjBggrBgEFBQcwAoYXaHR0cDovL3llMi5pLmxlbmNyLm9yZy8wFwYDVR0RBBAw
+DoIMdW5zZW50LnRvb2xzMBMGA1UdIAQMMAowCAYGZ4EMAQIBMC4GA1UdHwQnMCUw
+I6AhoB+GHWh0dHA6Ly95ZTIuYy5sZW5jci5vcmcvNzEuY3JsMIIBDQYKKwYBBAHW
+eQIEAgSB/gSB+wD5AHcAyKPEf8ezrbk1awE/anoSbeM6TkOlxkb5l605dZkdz5oA
+AAGgMCOvowAABAMASDBGAiEAmG4nEZXF0OeU6OWMwJeZLxkD5n5EcjBS4BuAxNlc
+RXICIQCK8gzCZUmjcLxq/3OozY7QpWcq8FLdXLJIRO7dmSv8hAB+ABqLnWsP/r+B
+tHk5xtIxCobW0QLU8EbiGCyd419eJiXvAAABoDAjsC8ACAAABQA36BPoBAMARzBF
+AiAvNFH7JJm6W1pOFIRM5Sus3hm0K/I3O8xBZ35exvySfgIhAIzSoeLOebNhGdS1
+wEn0x9QdYOjrRz9RYoNG+V7oDn3VMAoGCCqGSM49BAMDA2gAMGUCMAU5sidDY4JX
+L4Pz/Ur67BI5KmyiMyrLOVafLH35JjTXsRtj5+7TI2XP03guafjngQIxAKhoPypD
+ExirrlHFgYjPy3sW2u8uVvOePNPPbEmPq1ooLggSzCcngvTosI6JHTuPfA==
+-----END CERTIFICATE-----
+  </template>
+
+  <script type="module">
+    import { decodePemInput, fingerprints } from "./cert.js";
+
+    const $ = (id) => document.getElementById(id);
+    const input = $("pem"), err = $("err"), out = $("out"), skippedEl = $("skipped");
+
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    const row = (label, value, detail) =>
+      `<tr><th>${esc(label)}</th><td>${esc(value)}${detail ? ` <span class="hint" style="display:inline">${esc(detail)}</span>` : ""}</td></tr>`;
+
+    function dnRows(label, name) {
+      const parts = name.display.map((a) => `${a.name}=${a.value}`).join(", ");
+      return row(label, parts) ;
+    }
+
+    function certCard(c, idx, total) {
+      if (c.error) {
+        return `<div class="cert-card"><h2>Certificate ${idx + 1} of ${total}</h2>
+          <div class="warn">Could not decode: ${esc(c.error)}</div></div>`;
+      }
+      const d = c.decoded;
+      const cn = d.subject.display.find((a) => a.name === "CN");
+      const title = cn ? cn.value : (d.subject.rfc2253 || "(empty subject)");
+      const statusWord = { valid: "✓ currently valid", expired: "✗ expired",
+                           "not-yet-valid": "✗ not yet valid" }[d.status.state];
+      let html = `<div class="cert-card" data-idx="${idx}">
+        <h2>${esc(title)}${d.isCa ? " <span class='crit'>[CA]</span>" : ""}${total > 1 ? ` <span class="hint" style="display:inline">certificate ${idx + 1} of ${total}</span>` : ""}</h2>
+        <div class="status ${d.status.state}">${esc(statusWord)} — ${esc(d.status.detail)}</div>`;
+
+      for (const w of d.warnings) html += `<div class="warn">⚠ ${esc(w)}</div>`;
+      for (const n of d.notes) html += `<div class="note">${esc(n)}</div>`;
+
+      html += `<table class="results"><tbody>`;
+      html += dnRows("Subject", d.subject);
+      html += dnRows("Issuer", d.issuer);
+      if (d.san) html += row("Alt names", d.san.map((n) => `${n.type}:${n.value}`).join(", "));
+      html += row("Valid", `${d.notBefore.iso} → ${d.notAfter.iso}`, `${d.validityDays} days`);
+      html += row("Public key", d.publicKey.sizeText);
+      html += row("Signature", d.signature.name);
+      html += row("Serial", d.serial.hex);
+      html += row("Version", `v${d.version}`);
+      html += `<tr><th>SHA-256</th><td class="fp256" data-idx="${idx}">computing…</td></tr>`;
+      html += `<tr><th>SHA-1</th><td class="fp1" data-idx="${idx}">computing…</td></tr>`;
+      html += `</tbody></table>`;
+
+      if (d.extensions.length) {
+        html += `<h3>Extensions${d.extensions.some((e) => e.critical) ? ` <span class="crit">* = critical</span>` : ""}</h3><table class="results"><tbody>`;
+        for (const e of d.extensions) {
+          html += `<tr><th class="extname">${esc(e.name)}${e.critical ? `<span class="crit">*</span>` : ""}</th><td>${esc(e.summary)}</td></tr>`;
+        }
+        html += `</tbody></table>`;
+      }
+      return html + `</div>`;
+    }
+
+    async function render() {
+      const raw = input.value.trim();
+      err.textContent = ""; out.innerHTML = ""; skippedEl.hidden = true;
+      if (!raw) return;
+      let result;
+      try { result = decodePemInput(raw, Date.now()); }
+      catch (e) { err.textContent = e.message; return; }
+
+      if (result.skipped.length) {
+        skippedEl.hidden = false;
+        skippedEl.textContent = "Skipped: " + result.skipped.join("; ");
+      }
+      if (result.certs.length === 0) {
+        if (!result.skipped.length) err.textContent = "No certificate blocks found in the input.";
+        return;
+      }
+      out.innerHTML = result.certs.map((c, i) => certCard(c, i, result.certs.length)).join("");
+
+      // fingerprints are async (WebCrypto)
+      await Promise.all(result.certs.map(async (c, i) => {
+        const fp = await fingerprints(c.der);
+        const el256 = out.querySelector(`.fp256[data-idx="${i}"]`);
+        const el1 = out.querySelector(`.fp1[data-idx="${i}"]`);
+        if (el256 && fp) el256.textContent = fp.sha256;
+        if (el1 && fp) el1.textContent = fp.sha1;
+      }));
+    }
+
+    input.addEventListener("input", render);
+    $("ex-site").addEventListener("click", () => {
+      input.value = document.getElementById("site-cert").content.textContent.trim();
+      render();
+    });
+    $("ex-clear").addEventListener("click", () => { input.value = ""; render(); });
+  </script>
+</body>
+</html>
