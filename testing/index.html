@@ -35,7 +35,7 @@
       Every tool keeps its logic in a plain ES module with no DOM access. The
       page is a thin layer that wires inputs to that module; the module is what
       gets tested, with Node's built-in <code>node:test</code>. As of this
-      writing: <b>12 tools, 189 tests</b>. The deploy script runs every suite
+      writing: <b>13 tools, 198 tests</b>. The deploy script runs every suite
       and refuses to publish if any test is red — there is no path to the
       server that skips the tests.
     </p>
@@ -70,6 +70,7 @@
       <tr><th>uuid</th><td><b>Differential against Python's <code>uuid</code> module</b> (300 random UUIDs: variant, version, v1 timestamp/clock-sequence/node); ULID decode cross-checked against the reference <code>ulid</code> npm package; RFC 9562 Appendix A vectors pinned; 1000-value Crockford base32 round-trip; <code>crypto.randomUUID()</code> outputs must decode as v4/RFC.</td></tr>
       <tr><th>base</th><td><b>Differential against Python</b>: <code>int(s, base)</code> on 300 random value×base pairs, <code>format()</code> for hex/oct/bin/dec, <code>struct.pack</code> for every two's-complement width (boundary values pinned: −2ʷ⁻¹, −1, 0, 2ʷ⁻¹−1), and <code>bit_length()</code>/<code>bit_count()</code>. Round-trip property across all 35 bases; prefix-vs-digit ambiguities ("0b1" in hex, "0o…" in base ≥ 25) pinned.</td></tr>
       <tr><th>cert</th><td><b>Differential against <code>openssl x509</code></b>: certificates generated with varied key types (RSA 2048/4096, EC P-256/P-384, Ed25519), unicode and escaping-heavy distinguished names, SANs (DNS, IPv4/IPv6, email, URI), key-usage combinations, and 2051 expiry dates — subject/issuer in RFC 2253 form, serial, validity instants, SHA-256 fingerprint, key size, and signature algorithm must all agree with openssl's reading. The site's own 4-certificate production chain is pinned as a fixture. Hand-built DER vectors for the UTCTime 1950/2049 pivot, multi-byte OID components, negative INTEGERs, and BER-indefinite-length rejection.</td></tr>
+      <tr><th>csr</th><td><b>Differential against <code>openssl req</code></b>: requests generated with RSA/EC/Ed25519 keys, unicode DNs, SANs, key-usage/EKU/CA:TRUE extension requests, and challengePassword attributes — subject in RFC 2253 form, key size, signature algorithm, and SAN sets must agree with openssl's reading. Self-signature verification (WebCrypto) is tested positively on every generated request and negatively on a bit-flipped one, which <code>openssl req -verify</code> must also reject. Hand vector for DER→raw ECDSA signature conversion.</td></tr>
       <tr><th>hash</th><td><b>Differential against the coreutils binaries</b> (<code>md5sum</code>, <code>sha1sum</code>, <code>sha256sum</code>, <code>sha512sum</code>) on real files, against <code>node:crypto</code> at every padding-boundary length 0–130 plus multi-block sizes, and against <code>node:zlib</code> for CRC-32 (200 random inputs). All seven RFC 1321 MD5 vectors, FIPS 180 SHA vectors, and RFC 2202 / RFC 4231 HMAC vectors (including the key-longer-than-block cases) pinned. HMAC checked against <code>node:crypto</code> for key lengths 0 through 3× block size.</td></tr>
     </tbody></table>
     <p>

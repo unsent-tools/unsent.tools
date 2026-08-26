@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSR decoder — unsent.tools</title>
+  <meta name="description" content="Decode PKCS#10 certificate signing requests: subject, key, requested SANs and extensions, attributes — and verify the self-signature. Entirely in your browser; nothing you paste is sent anywhere.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    textarea {
+      width: 100%; min-height: 11rem; resize: vertical; font-family: var(--mono);
+      font-size: 0.82rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem;
+      box-sizing: border-box;
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
+    .csr-card {
+      margin-top: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; background: var(--card);
+    }
+    .csr-card h2 { margin: 0 0 0.2rem; font-size: 1.02rem; }
+    .sig { font-size: 0.9rem; margin-bottom: 0.6rem; }
+    .sig.valid { color: var(--ok, #3a9d5d); }
+    .sig.invalid { color: var(--bad, #c94f4f); }
+    .sig.unsupported, .sig.unavailable { color: var(--muted); }
+    .warn {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--bad, #c94f4f);
+      border-radius: 6px;
+    }
+    .note { margin: 0.6rem 0; color: var(--muted); font-size: 0.88rem; }
+    .skipped {
+      margin: 0.8rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 6px;
+    }
+    table.results { margin-top: 0.5rem; }
+    table.results td { word-break: break-all; }
+    .extname { white-space: nowrap; }
+    .crit { color: var(--bad, #c94f4f); font-size: 0.8rem; }
+    h3 { font-size: 0.92rem; margin: 1rem 0 0.2rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">CSR decoder</span>
+    </header>
+
+    <h1>CSR decoder</h1>
+    <p class="lede">
+      Paste a PKCS#10 certificate signing request and see exactly what you're
+      about to send your CA: subject, key type, requested names and
+      extensions, attributes — plus a real check of the self-signature, done
+      with your browser's own crypto. CSRs carry organisation details and
+      sometimes plaintext challenge passwords; here, nothing you paste leaves
+      this page.
+    </p>
+
+    <label for="pem">PEM certificate request</label>
+    <textarea id="pem" spellcheck="false" autocomplete="off" autocapitalize="off"
+              placeholder="-----BEGIN CERTIFICATE REQUEST-----&#10;MIIBLTCB1QIBADA5MRQwEgYD…&#10;-----END CERTIFICATE REQUEST-----"
+              aria-describedby="hint err"></textarea>
+    <div class="hint" id="hint">Accepts <code>BEGIN CERTIFICATE REQUEST</code> (and <code>NEW CERTIFICATE REQUEST</code>) blocks, or bare base64 DER. Certificates and private keys are recognised and refused — certificates belong in the <a href="../cert/">certificate decoder</a>.</div>
+    <div class="error" id="err" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" id="ex-csr">an example request</button>
+      <button type="button" id="ex-clear">clear</button>
+    </div>
+
+    <div id="skipped" class="skipped" hidden></div>
+    <div id="out"></div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <template id="example-csr">
+-----BEGIN CERTIFICATE REQUEST-----
+MIIBLTCB1QIBADA5MRQwEgYDVQQDDAtleGFtcGxlLmNvbTEUMBIGA1UECgwLRXhh
+bXBsZSBPcmcxCzAJBgNVBAYTAlVTMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE
+axoVlNtU6chGWMX7kQUwyqSPJyW7o0Gat4ySUrcb18wnunXM/ZnoJL2OpOZ1PUta
+X83koN2ZszH3sWldsG1d0aA6MDgGCSqGSIb3DQEJDjErMCkwJwYDVR0RBCAwHoIL
+ZXhhbXBsZS5jb22CD3d3dy5leGFtcGxlLmNvbTAKBggqhkjOPQQDAgNHADBEAiB0
+T0lp/v6oxQ4CQQtfQpNChiMz//e7NfbW+nv6FPGfbwIgIGGKgSBI99Sdp1cEnn9L
+r09sxIte0LjeCbKKX3yX6HU=
+-----END CERTIFICATE REQUEST-----
+  </template>
+
+  <script type="module">
+    import { decodeCsrPemInput, verifyCsrSignature } from "./csr.js";
+
+    const $ = (id) => document.getElementById(id);
+    const input = $("pem"), err = $("err"), out = $("out"), skippedEl = $("skipped");
+
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    const row = (label, value, detail) =>
+      `<tr><th>${esc(label)}</th><td>${esc(value)}${detail ? ` <span class="hint" style="display:inline">${esc(detail)}</span>` : ""}</td></tr>`;
+
+    function csrCard(c, idx, total) {
+      if (c.error) {
+        return `<div class="csr-card"><h2>Request ${idx + 1} of ${total}</h2>
+          <div class="warn">Could not decode: ${esc(c.error)}</div></div>`;
+      }
+      const d = c.decoded;
+      const cn = d.subject.display.find((a) => a.name === "CN");
+      const title = cn ? cn.value : (d.subject.rfc2253 || "(empty subject)");
+      let html = `<div class="csr-card" data-idx="${idx}">
+        <h2>${esc(title)}${total > 1 ? ` <span class="hint" style="display:inline">request ${idx + 1} of ${total}</span>` : ""}</h2>
+        <div class="sig" data-idx="${idx}">checking self-signature…</div>`;
+
+      for (const w of d.warnings) html += `<div class="warn">⚠ ${esc(w)}</div>`;
+      for (const n of d.notes) html += `<div class="note">${esc(n)}</div>`;
+
+      html += `<table class="results"><tbody>`;
+      html += row("Subject", d.subject.display.map((a) => `${a.name}=${a.value}`).join(", ") || "(empty)");
+      const san = (d.extensions || []).find((e) => e.oid === "2.5.29.17");
+      if (san) html += row("Requested names", san.names.map((n) => `${n.type}:${n.value}`).join(", "));
+      html += row("Public key", d.publicKey.sizeText);
+      html += row("Signature", d.signature.name);
+      html += row("Version", `${d.version}`, d.version === 0 ? "(correct for PKCS#10)" : "");
+      html += `</tbody></table>`;
+
+      if (d.attributes.length) {
+        html += `<h3>Attributes</h3><table class="results"><tbody>`;
+        for (const a of d.attributes) {
+          html += `<tr><th class="extname">${esc(a.name)}</th><td>${esc(a.value)}</td></tr>`;
+        }
+        html += `</tbody></table>`;
+      }
+
+      if (d.extensions && d.extensions.length) {
+        html += `<h3>Requested extensions${d.extensions.some((e) => e.critical) ? ` <span class="crit">* = critical</span>` : ""}</h3><table class="results"><tbody>`;
+        for (const e of d.extensions) {
+          html += `<tr><th class="extname">${esc(e.name)}${e.critical ? `<span class="crit">*</span>` : ""}</th><td>${esc(e.summary)}</td></tr>`;
+        }
+        html += `</tbody></table>`;
+      }
+      return html + `</div>`;
+    }
+
+    async function render() {
+      const raw = input.value.trim();
+      err.textContent = ""; out.innerHTML = ""; skippedEl.hidden = true;
+      if (!raw) return;
+      let result;
+      try { result = decodeCsrPemInput(raw); }
+      catch (e) { err.textContent = e.message; return; }
+
+      if (result.skipped.length) {
+        skippedEl.hidden = false;
+        skippedEl.textContent = "Skipped: " + result.skipped.join("; ");
+      }
+      if (result.csrs.length === 0) {
+        if (!result.skipped.length) err.textContent = "No certificate request blocks found in the input.";
+        return;
+      }
+      out.innerHTML = result.csrs.map((c, i) => csrCard(c, i, result.csrs.length)).join("");
+
+      // signature verification is async (WebCrypto)
+      await Promise.all(result.csrs.map(async (c, i) => {
+        if (!c.decoded) return;
+        const v = await verifyCsrSignature(c.der, c.decoded);
+        const el = out.querySelector(`.sig[data-idx="${i}"]`);
+        if (!el) return;
+        const mark = { valid: "✓", invalid: "✗" }[v.state] || "·";
+        el.className = `sig ${v.state}`;
+        el.textContent = `${mark} ${v.detail}`;
+      }));
+    }
+
+    input.addEventListener("input", render);
+    $("ex-csr").addEventListener("click", () => {
+      input.value = document.getElementById("example-csr").content.textContent.trim();
+      render();
+    });
+    $("ex-clear").addEventListener("click", () => { input.value = ""; render(); });
+  </script>
+</body>
+</html>

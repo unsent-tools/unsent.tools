@@ -62,7 +62,7 @@
     <textarea id="pem" spellcheck="false" autocomplete="off" autocapitalize="off"
               placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDhzCCAw2gAwIBAgISBXv1…&#10;-----END CERTIFICATE-----"
               aria-describedby="hint err"></textarea>
-    <div class="hint" id="hint">Accepts one or more <code>BEGIN CERTIFICATE</code> blocks, or bare base64 DER. Private keys and CSRs are recognised and refused.</div>
+    <div class="hint" id="hint">Accepts one or more <code>BEGIN CERTIFICATE</code> blocks, or bare base64 DER. Private keys are recognised and refused; CSRs belong in the <a href="../csr/">CSR decoder</a>.</div>
     <div class="error" id="err" role="alert"></div>
 
     <div class="examples">

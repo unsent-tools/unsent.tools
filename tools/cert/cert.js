@@ -90,21 +90,21 @@ const KEY_USAGE_BITS = [
 
 // ---- helpers -----------------------------------------------------------
 
-function expectSeq(node, what) {
+export function expectSeq(node, what) {
   if (!node || node.cls !== CLASS_UNIVERSAL || node.tag !== 16 || !node.constructed) {
     throw new Error(`Malformed certificate: expected a SEQUENCE for ${what}.`);
   }
   return node;
 }
 
-function algorithmIdentifier(bytes, node) {
+export function algorithmIdentifier(bytes, node) {
   expectSeq(node, "AlgorithmIdentifier");
   const oid = readOid(bytes, node.children[0]);
   return { oid, params: node.children[1] || null };
 }
 
 // Name (RDNSequence) → { rdns: [[{oidName, oid, value}]], rfc2253, display }
-function parseName(bytes, node) {
+export function parseName(bytes, node) {
   expectSeq(node, "Name");
   const rdns = [];
   for (const rdnSet of node.children) {
@@ -181,7 +181,7 @@ function parseGeneralNames(bytes, node) {
 
 // ---- extension decoders ------------------------------------------------
 
-function decodeExtension(bytes, oid, valueBytes) {
+export function decodeExtension(bytes, oid, valueBytes) {
   // valueBytes is the DER inside the extension's OCTET STRING.
   const parse = () => parseElement(valueBytes, 0);
   try {
@@ -268,7 +268,7 @@ function decodeExtension(bytes, oid, valueBytes) {
 
 // ---- public key --------------------------------------------------------
 
-function parseSpki(bytes, node) {
+export function parseSpki(bytes, node) {
   expectSeq(node, "SubjectPublicKeyInfo");
   const alg = algorithmIdentifier(bytes, node.children[0]);
   const keyBits = readBitString(bytes, node.children[1]);
@@ -420,7 +420,7 @@ export function decodePemInput(text, now) {
   }
   const certs = [], skipped = [];
   for (const b of blocks) {
-    if (/CERTIFICATE REQUEST/.test(b.label)) { skipped.push(b.label + " (CSRs are not certificates — not supported yet)"); continue; }
+    if (/CERTIFICATE REQUEST/.test(b.label)) { skipped.push(b.label + " (this is a CSR, not a certificate — use the CSR decoder at /tools/csr/)"); continue; }
     if (/PRIVATE KEY/.test(b.label)) { skipped.push(b.label + " (this is a PRIVATE KEY, not a certificate — treat it as compromised if you pasted it anywhere else)"); continue; }
     if (b.label !== "CERTIFICATE" && b.label !== "TRUSTED CERTIFICATE") { skipped.push(b.label); continue; }
     try { certs.push({ der: b.der, decoded: decodeCertificate(b.der, now) }); }

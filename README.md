@@ -105,6 +105,13 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   small keys, missing SANs, and over-long validity. Own DER parser;
   differential-tested against `openssl x509` across generated certificates,
   with the site's own production chain pinned as a fixture.
+- **[csr](https://unsent.tools/tools/csr/)** — CSR decoder: PKCS#10 certificate
+  signing requests — subject, key details, requested SANs and extensions,
+  attributes (including plaintext challengePassword, with a warning) — plus
+  real self-signature verification via WebCrypto (RSA, ECDSA, Ed25519), so
+  tampering and corruption are actually detected, not assumed away.
+  Differential-tested against `openssl req`, including a tamper test both
+  implementations must reject.
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested
