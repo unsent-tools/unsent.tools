@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR code generator — unsent.tools</title>
+  <meta name="description" content="Generate QR codes entirely in your browser: any text or URL, all four error-correction levels, SVG and PNG download. Nothing you type is sent anywhere.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    textarea {
+      width: 100%; min-height: 5.5rem; resize: vertical; font-family: var(--mono);
+      font-size: 0.95rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem;
+      box-sizing: border-box;
+    }
+    select, input[type="color"] {
+      font-family: var(--mono); font-size: 0.95rem; background: var(--card);
+      color: var(--fg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.45rem 0.5rem;
+    }
+    input[type="color"] { padding: 0.15rem; height: 2.2rem; width: 3.2rem; cursor: pointer; }
+    .optrow { display: flex; gap: 1.2rem; align-items: flex-end; flex-wrap: wrap; margin-top: 0.9rem; }
+    .optrow label { display: block; margin-bottom: 0.25rem; }
+    .preview {
+      margin-top: 1.4rem; display: flex; gap: 1.6rem; flex-wrap: wrap; align-items: flex-start;
+    }
+    .preview svg {
+      max-width: min(420px, 100%); height: auto; border: 1px solid var(--border);
+      border-radius: 6px; background: #fff;
+    }
+    .facts { font-size: 0.9rem; color: var(--muted); min-width: 220px; }
+    .facts table { border-collapse: collapse; }
+    .facts th { text-align: left; padding: 0.15rem 0.9rem 0.15rem 0; font-weight: 500; color: var(--fg); white-space: nowrap; }
+    .facts td { font-family: var(--mono); }
+    .dlrow { margin-top: 1rem; display: flex; gap: 0.7rem; flex-wrap: wrap; align-items: center; }
+    .dlrow button {
+      font: inherit; background: var(--card); color: var(--fg); cursor: pointer;
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.9rem;
+    }
+    .dlrow button:hover { border-color: var(--accent); color: var(--accent); }
+    .copied-hint { color: var(--muted); font-size: 0.85rem; min-height: 1.2em; margin-top: 0.5rem; }
+    .notes { color: var(--muted); font-size: 0.88rem; margin-top: 1.6rem; }
+    .notes p { margin: 0.4rem 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">qr code generator</span>
+    </header>
+
+    <h1>QR code generator</h1>
+    <p class="lede">
+      Any text or URL as a QR code — versions 1–40, all four error-correction
+      levels, mask chosen by the standard's penalty rules, downloadable as
+      crisp SVG or PNG. Generated entirely in your browser: nothing you type
+      leaves this page.
+    </p>
+
+    <div>
+      <label for="content">Content</label>
+      <textarea id="content" spellcheck="false" autocapitalize="off" autocorrect="off"
+        placeholder="https://example.org, plain text, WIFI:T:WPA;S:network;P:password;;, …"></textarea>
+    </div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-v="https://unsent.tools/">a URL</button>
+      <button type="button" data-v="WIFI:T:WPA;S:my network;P:correct horse battery;;">Wi-Fi login</button>
+      <button type="button" data-v="MAILTO:someone@example.org">an email address</button>
+      <button type="button" data-v="Meet at the north entrance at 14:30 — look for the red umbrella ☂">plain text</button>
+    </div>
+
+    <div class="optrow">
+      <div>
+        <label for="level">Error correction</label>
+        <select id="level">
+          <option value="L">L — recovers ~7%</option>
+          <option value="M" selected>M — recovers ~15%</option>
+          <option value="Q">Q — recovers ~25%</option>
+          <option value="H">H — recovers ~30%</option>
+        </select>
+      </div>
+      <div>
+        <label for="scale">PNG module size</label>
+        <select id="scale">
+          <option value="4">4 px</option>
+          <option value="8" selected>8 px</option>
+          <option value="16">16 px</option>
+          <option value="32">32 px</option>
+        </select>
+      </div>
+      <div>
+        <label for="dark">Dark</label>
+        <input type="color" id="dark" value="#000000">
+      </div>
+      <div>
+        <label for="light">Light</label>
+        <input type="color" id="light" value="#ffffff">
+      </div>
+    </div>
+    <div class="hint">Higher error correction survives more damage (or a logo pasted
+      over the middle) but makes a denser code. Keep dark-on-light: scanners assume it.</div>
+    <div class="error" id="err" role="alert"></div>
+
+    <div id="out" hidden>
+      <div class="preview">
+        <div id="svgbox" aria-label="Generated QR code"></div>
+        <div class="facts"><table id="facts"></table></div>
+      </div>
+      <div class="dlrow">
+        <button type="button" id="dlsvg">Download SVG</button>
+        <button type="button" id="dlpng">Download PNG</button>
+        <button type="button" id="copysvg">Copy SVG markup</button>
+      </div>
+      <div class="copied-hint" id="copied"></div>
+    </div>
+
+    <div class="notes">
+      <p><b>Check it before you print it.</b> This generator is tested against
+        independent implementations (see <a href="../../testing/">how these are
+        tested</a>), but a scan with your own phone is the test that matters —
+        especially after changing colors. Low contrast is the usual culprit.</p>
+      <p>Content is encoded in the cheapest mode that fits: digits only →
+        numeric, the 45-character uppercase set → alphanumeric, anything else →
+        bytes as UTF-8. That's why <code>EXAMPLE.ORG</code> makes a sparser code
+        than <code>example.org</code>.</p>
+    </div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { encode, toSvg } from "./qr.js";
+
+    const $ = (id) => document.getElementById(id);
+    const content = $("content"), level = $("level"), scale = $("scale"),
+          dark = $("dark"), light = $("light"), err = $("err"), out = $("out"),
+          svgbox = $("svgbox"), facts = $("facts"), copied = $("copied");
+
+    const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    let current = null; // last successful encode result
+
+    function render() {
+      err.textContent = "";
+      const text = content.value;
+      if (!text) { out.hidden = true; current = null; return; }
+      let r;
+      try { r = encode(text, { level: level.value }); }
+      catch (e) { out.hidden = true; current = null; err.textContent = e.message; return; }
+      current = r;
+      out.hidden = false;
+      svgbox.innerHTML = toSvg(r.matrix, { scale: 1, border: 4, dark: dark.value, light: light.value });
+      const modeName = { numeric: "numeric", alphanumeric: "alphanumeric", byte: "byte (UTF-8)" }[r.mode];
+      facts.innerHTML =
+        `<tr><th>Version</th><td>${r.version} (${r.size}×${r.size} modules)</td></tr>` +
+        `<tr><th>Error correction</th><td>${esc(r.level)} — ${r.counts.ecCodewords} of ${r.counts.totalCodewords} codewords</td></tr>` +
+        `<tr><th>Mode</th><td>${modeName}</td></tr>` +
+        `<tr><th>Mask pattern</th><td>${r.mask}</td></tr>` +
+        `<tr><th>Data used</th><td>${Math.ceil(r.counts.dataBitsUsed / 8)} of ${r.counts.dataCodewords} bytes</td></tr>`;
+    }
+
+    function download(name, blob) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }
+
+    $("dlsvg").addEventListener("click", () => {
+      if (!current) return;
+      const svg = toSvg(current.matrix, { scale: Number(scale.value), border: 4, dark: dark.value, light: light.value });
+      download("qr.svg", new Blob([svg], { type: "image/svg+xml" }));
+    });
+
+    $("dlpng").addEventListener("click", () => {
+      if (!current) return;
+      const s = Number(scale.value), border = 4;
+      const dim = (current.size + border * 2) * s;
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = dim;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = light.value;
+      ctx.fillRect(0, 0, dim, dim);
+      ctx.fillStyle = dark.value;
+      for (let r = 0; r < current.size; r++) {
+        for (let c = 0; c < current.size; c++) {
+          if (current.matrix[r][c]) ctx.fillRect((c + border) * s, (r + border) * s, s, s);
+        }
+      }
+      canvas.toBlob((blob) => download("qr.png", blob), "image/png");
+    });
+
+    $("copysvg").addEventListener("click", async () => {
+      if (!current) return;
+      const svg = toSvg(current.matrix, { scale: Number(scale.value), border: 4, dark: dark.value, light: light.value });
+      try {
+        await navigator.clipboard.writeText(svg);
+        copied.textContent = "Copied the SVG markup.";
+        setTimeout(() => { copied.textContent = ""; }, 1500);
+      } catch { copied.textContent = "Copy failed — use Download SVG instead."; }
+    });
+
+    content.addEventListener("input", render);
+    level.addEventListener("change", render);
+    dark.addEventListener("input", render);
+    light.addEventListener("input", render);
+
+    document.querySelector(".examples").addEventListener("click", (e) => {
+      const v = e.target.dataset?.v;
+      if (v) { content.value = v; render(); }
+    });
+  </script>
+</body>
+</html>

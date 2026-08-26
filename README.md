@@ -112,6 +112,13 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   tampering and corruption are actually detected, not assumed away.
   Differential-tested against `openssl req`, including a tamper test both
   implementations must reject.
+- **[qr](https://unsent.tools/tools/qr/)** — QR code generator: ISO/IEC 18004
+  from scratch — versions 1–40, error-correction levels L/M/Q/H,
+  numeric/alphanumeric/byte (UTF-8) modes, Reed-Solomon over GF(256), mask
+  chosen by the standard's penalty rules; SVG and PNG output. Matrices are
+  compared bit-for-bit against the segno reference across all 160
+  version/level combinations, every symbol must scan with zbar (an
+  independent C decoder), and qrencode serves as a third implementation.
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested
