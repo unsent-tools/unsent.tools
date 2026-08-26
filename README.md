@@ -119,6 +119,13 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   compared bit-for-bit against the segno reference across all 160
   version/level combinations, every symbol must scan with zbar (an
   independent C decoder), and qrencode serves as a third implementation.
+- **[sshkey](https://unsent.tools/tools/sshkey/)** — SSH key decoder: public
+  keys, authorized_keys lines (options with full quoting), known_hosts
+  (plain and hashed, markers), RFC 4716 blocks, and OpenSSH certificates
+  (key ID, serial, principals, validity, extensions, signing CA) — with
+  SHA256/MD5 fingerprints and the randomart drawing, all byte-compatible
+  with ssh-keygen, which is exactly what the tests compare against.
+  Private keys are refused with a warning, never parsed.
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested

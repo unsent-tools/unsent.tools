@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SSH key decoder — unsent.tools</title>
+  <meta name="description" content="Decode SSH public keys, authorized_keys and known_hosts lines, and OpenSSH certificates: type, bits, SHA256 and MD5 fingerprints, randomart, options, principals, validity. Entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    textarea {
+      width: 100%; min-height: 6.5rem; resize: vertical; font-family: var(--mono);
+      font-size: 0.85rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem;
+      box-sizing: border-box; white-space: pre; overflow-x: auto;
+    }
+    .keycard {
+      border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+      padding: 1rem 1.2rem; margin-top: 1.2rem;
+    }
+    .keycard h2 { margin: 0 0 0.2rem; font-size: 1.05rem; }
+    .badge {
+      display: inline-block; font-size: 0.75rem; font-family: var(--sans);
+      color: var(--muted); border: 1px solid var(--border); border-radius: 999px;
+      padding: 0.1rem 0.55rem; margin-left: 0.5rem; vertical-align: middle;
+    }
+    .kv { border-collapse: collapse; width: 100%; margin-top: 0.5rem; }
+    .kv th { text-align: left; padding: 0.28rem 1rem 0.28rem 0; font-weight: 500; white-space: nowrap; vertical-align: top; width: 1%; }
+    .kv td { font-family: var(--mono); font-size: 0.9rem; word-break: break-all; padding: 0.28rem 0; }
+    .kv td.copyable { cursor: pointer; }
+    .kv td.copyable:hover { color: var(--accent); }
+    pre.art {
+      font-family: var(--mono); font-size: 0.85rem; line-height: 1.15;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.6rem 0.8rem; display: inline-block; margin: 0.6rem 0 0;
+    }
+    .warn { color: #b45309; font-size: 0.9rem; margin-top: 0.55rem; }
+    .keyerror {
+      border: 1px solid #b4530955; border-radius: 8px; padding: 0.8rem 1.2rem;
+      margin-top: 1.2rem; font-size: 0.92rem;
+    }
+    .keyerror code { word-break: break-all; }
+    ul.opts { margin: 0.2rem 0 0; padding-left: 1.2rem; font-family: var(--mono); font-size: 0.88rem; }
+    .copied-hint { color: var(--muted); font-size: 0.85rem; min-height: 1.2em; margin-top: 0.5rem; }
+    details.artbox { margin-top: 0.6rem; }
+    details.artbox summary { cursor: pointer; color: var(--muted); font-size: 0.88rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">ssh key decoder</span>
+    </header>
+
+    <h1>SSH key decoder</h1>
+    <p class="lede">
+      Paste SSH <em>public</em> keys — bare lines, <code>authorized_keys</code>
+      with options, <code>known_hosts</code> (hashed or not), RFC 4716 blocks,
+      OpenSSH certificates — and get the type, size, SHA256 and MD5
+      fingerprints, randomart, and every certificate field, exactly as
+      <code>ssh-keygen</code> would report them. Nothing you paste leaves this
+      page.
+    </p>
+
+    <div>
+      <label for="input">Public keys, one per line (or RFC 4716 / certificate blocks)</label>
+      <textarea id="input" spellcheck="false" autocapitalize="off" autocorrect="off"
+        placeholder="ssh-ed25519 AAAAC3… name@host"></textarea>
+    </div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-v="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ7tVKNajFaqNvYZhiilTQTs0GwnmsbX5hsA65d9PZ2n test-ed25519">a public key</button>
+      <button type="button" data-v='command="/usr/bin/rrsync /srv/backup",no-pty,from="10.0.0.0/8" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ7tVKNajFaqNvYZhiilTQTs0GwnmsbX5hsA65d9PZ2n backup key'>authorized_keys with options</button>
+      <button type="button" data-v="ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAIGHiKvNO5MzSymWVWk8XcZGjG12zxqL4MzZcZOinBwlcAAAAIJ7tVKNajFaqNvYZhiilTQTs0GwnmsbX5hsA65d9PZ2nAAAAAAAAACoAAAABAAAADWFsaWNlQGV4YW1wbGUAAAASAAAABWFsaWNlAAAABWFkbWluAAAAAGqO4egAAAAAbG7ENwAAAAAAAACCAAAAFXBlcm1pdC1YMTEtZm9yd2FyZGluZwAAAAAAAAAXcGVybWl0LWFnZW50LWZvcndhcmRpbmcAAAAAAAAAFnBlcm1pdC1wb3J0LWZvcndhcmRpbmcAAAAAAAAACnBlcm1pdC1wdHkAAAAAAAAADnBlcm1pdC11c2VyLXJjAAAAAAAAAAAAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIA7nHMk2jJh9XWNXHuDxPbb6iaqAJKgbOp40nHUlrWkqAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEBhn2LIEcKidhQJHJrYiQ6cbB/ToJkBjVcSvm0ulb5ZoUud1DbWD9O+BPE3oopYUO8e2zuIiO9olh6XpEneGFQO test-ed25519">a certificate</button>
+    </div>
+    <div class="hint">Click a fingerprint to copy it. Private keys are refused, not decoded —
+      but don't paste them anywhere, including here.</div>
+    <div class="error" id="err" role="alert"></div>
+    <div class="copied-hint" id="copied"></div>
+
+    <div id="results"></div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { parseAll, formatValidity } from "./sshkey.js";
+
+    const $ = (id) => document.getElementById(id);
+    const input = $("input"), err = $("err"), results = $("results"), copied = $("copied");
+
+    const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    const SOURCE_LABEL = {
+      openssh: null, // the plain default needs no badge
+      authorized_keys: "authorized_keys line",
+      known_hosts: "known_hosts line",
+      rfc4716: "RFC 4716",
+    };
+
+    function row(label, value, { copy = false, html = false } = {}) {
+      const body = html ? value : esc(value);
+      return `<tr><th>${esc(label)}</th><td${copy ? ' class="copyable"' : ""}>${body}</td></tr>`;
+    }
+
+    function keyCard(e) {
+      const k = e.key;
+      const badge = SOURCE_LABEL[e.source] ? `<span class="badge">${esc(SOURCE_LABEL[e.source])}</span>` : "";
+      const certBadge = k.cert ? `<span class="badge">${esc(k.cert.certType)} certificate</span>` : "";
+      const rows = [];
+      rows.push(row("Type", `${k.alg}${k.curve ? " (" + k.curve + ")" : ""} · ${k.bits} bits`));
+      rows.push(row("SHA256", e.fingerprints.sha256, { copy: true }));
+      rows.push(row("MD5", e.fingerprints.md5, { copy: true }));
+      if (e.parsed.comment) rows.push(row("Comment", e.parsed.comment));
+      if (k.application) rows.push(row("FIDO application", k.application));
+      if (e.parsed.marker) rows.push(row("Marker", e.parsed.marker));
+      if (e.parsed.hosts != null) {
+        rows.push(row("Hosts", e.parsed.hashedHosts
+          ? "hashed (HashKnownHosts) — the host name is not recoverable, only checkable"
+          : e.parsed.hosts));
+      }
+      if (e.parsed.options) {
+        rows.push(row("Options", `<ul class="opts">${e.parsed.options.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>`, { html: true }));
+      }
+      if (k.cert) {
+        const c = k.cert;
+        rows.push(row("Key ID", c.keyId));
+        rows.push(row("Serial", String(c.serial)));
+        rows.push(row("Principals", c.principals.length ? c.principals.join(", ") : "(none — valid for anyone the server allows)"));
+        rows.push(row("Valid", formatValidity(c)));
+        if (e.caFingerprint) rows.push(row("Signing CA", `${c.caKey ? c.caKey.alg + " " : ""}${e.caFingerprint}`, { copy: true }));
+        rows.push(row("Critical options", c.criticalOptions.length
+          ? `<ul class="opts">${c.criticalOptions.map((o) => `<li>${esc(o.name)}${o.value ? "=" + esc(o.value) : ""}</li>`).join("")}</ul>`
+          : "(none)", { html: c.criticalOptions.length > 0 }));
+        rows.push(row("Extensions", c.extensions.length
+          ? c.extensions.map((x) => x.name + (x.value ? "=" + x.value : "")).join(", ")
+          : "(none)"));
+      }
+      const warns = e.warnings.map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join("");
+      return `<div class="keycard">
+        <h2>${esc(k.alg)} ${k.cert ? "certificate" : "public key"}${badge}${certBadge}</h2>
+        <table class="kv">${rows.join("")}</table>
+        ${warns}
+        <details class="artbox"><summary>randomart (as ssh-keygen -lv draws it)</summary><pre class="art">${esc(e.randomart)}</pre></details>
+      </div>`;
+    }
+
+    let seq = 0;
+    async function render() {
+      const my = ++seq;
+      err.textContent = "";
+      const text = input.value;
+      if (!text.trim()) { results.innerHTML = ""; return; }
+      let parsed;
+      try { parsed = await parseAll(text); }
+      catch (e) { if (my === seq) { results.innerHTML = ""; err.textContent = e.message; } return; }
+      if (my !== seq) return; // a newer parse superseded this one
+      results.innerHTML = parsed.entries.map((e) => e.ok
+        ? keyCard(e)
+        : `<div class="keyerror">⚠ <code>${esc(e.line)}</code> — ${esc(e.error)}</div>`
+      ).join("");
+    }
+
+    input.addEventListener("input", render);
+
+    document.querySelector(".examples").addEventListener("click", (e) => {
+      const v = e.target.dataset?.v;
+      if (v) { input.value = v; render(); }
+    });
+
+    document.addEventListener("click", async (e) => {
+      const el = e.target.closest("td.copyable");
+      if (!el) return;
+      try {
+        await navigator.clipboard.writeText(el.textContent);
+        copied.textContent = `Copied: ${el.textContent.slice(0, 60)}${el.textContent.length > 60 ? "…" : ""}`;
+        setTimeout(() => { copied.textContent = ""; }, 1500);
+      } catch { copied.textContent = "Copy failed — select and copy manually."; }
+    });
+  </script>
+</body>
+</html>
