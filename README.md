@@ -141,6 +141,15 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   space lookalikes, and mixed-script homographs. Character data generated
   from UCD 15.0.0; names/categories differential-tested against Python's
   `unicodedata`, the script table against Node's own ICU.
+- **[spf](https://unsent.tools/tools/spf/)** — mail DNS record checker:
+  SPF, DMARC, DKIM public-key, MTA-STS, and TLSRPT records parsed and
+  explained — every SPF mechanism in plain language with DNS lookups counted
+  against the limit of 10, DMARC effective policies under RFC 9989 (with
+  legacy RFC 7489 tags flagged), DKIM key algorithm/size checks against
+  RFC 8301/8463, and an offline would-this-IP-pass evaluator. Accepts bare
+  values or dig/zone-file lines (multi-string TXT records are concatenated).
+  Differential-tested against pyspf (mechanism grammar and full-record
+  evaluation), checkdmarc, dkimpy's tag parser, and openssl-generated keys.
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested

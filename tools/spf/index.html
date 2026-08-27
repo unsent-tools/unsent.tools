@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SPF, DMARC &amp; DKIM record checker — unsent.tools</title>
+  <meta name="description" content="Parse and explain SPF, DMARC, DKIM, MTA-STS and TLSRPT DNS records: every mechanism decoded, DNS lookup counting, policy warnings, key sizes, and an offline what-would-this-IP-do tester. Entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    textarea {
+      width: 100%; min-height: 7rem; resize: vertical; font-family: var(--mono);
+      font-size: 0.8rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem;
+      box-sizing: border-box;
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
+    .card {
+      margin-top: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; background: var(--card);
+    }
+    .card h2 { margin: 0 0 0.4rem; font-size: 1.02rem; }
+    .card .name { color: var(--muted); font-weight: 400; font-size: 0.88rem; }
+    .warn, .fatal {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--bad, #c94f4f);
+      border-radius: 6px;
+    }
+    .info {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 6px;
+    }
+    .allclear { color: var(--ok, #3a9d5d); font-size: 0.92rem; margin: 0.6rem 0; }
+    table.terms { width: 100%; font-size: 0.88rem; border-collapse: collapse; }
+    table.terms td { padding: 0.3rem 0.5rem; vertical-align: top; border-top: 1px solid var(--border); }
+    table.terms td:first-child { font-family: var(--mono); white-space: nowrap; }
+    table.results td { word-break: break-word; }
+    .q-pass { color: var(--ok, #3a9d5d); } .q-fail { color: var(--bad, #c94f4f); }
+    .q-softfail { color: var(--warn, #c9a84f); } .q-neutral { color: var(--muted); }
+    .lookup { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+    .iptest { margin-top: 0.8rem; display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
+    .iptest input {
+      font-family: var(--mono); font-size: 0.85rem; background: var(--bg);
+      color: var(--fg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.35rem 0.5rem; width: 16rem; max-width: 100%;
+    }
+    .iptest input:focus { outline: none; border-color: var(--accent); }
+    .verdict { font-size: 0.9rem; }
+    .mono { font-family: var(--mono); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">spf · dmarc · dkim records</span>
+    </header>
+
+    <h1>Mail DNS record checker</h1>
+    <p class="lede">
+      Paste an SPF, DMARC, DKIM-key, MTA-STS, or TLSRPT record — the bare value
+      or a whole <span class="mono">dig</span> answer — and see what it actually
+      says: every mechanism in plain language, DNS lookups counted against the
+      limit of 10, policy weaknesses flagged, key sizes checked. No DNS queries,
+      no server: your records never leave this page.
+    </p>
+
+    <label for="src">Record or dig output</label>
+    <textarea id="src" spellcheck="false" autocomplete="off" autocapitalize="off"
+              placeholder='v=spf1 include:_spf.example.com -all&#10;or:  _dmarc.example.com. 300 IN TXT "v=DMARC1; p=reject; …"'
+              aria-describedby="hint err"></textarea>
+    <div class="hint" id="hint">Get records with <span class="mono">dig txt example.com</span>, <span class="mono">dig txt _dmarc.example.com</span>, or <span class="mono">dig txt selector._domainkey.example.com</span>. Quoted multi-string records are concatenated automatically.</div>
+    <div class="error" id="err" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-ex="t-spf">an SPF record</button>
+      <button type="button" data-ex="t-dmarc">a DMARC policy</button>
+      <button type="button" data-ex="t-dkim">a DKIM key</button>
+      <button type="button" data-ex="t-nasty">a broken setup</button>
+      <button type="button" id="ex-clear">clear</button>
+    </div>
+
+    <div id="out"></div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+<template id="t-spf">example.com. 3600 IN TXT "v=spf1 ip4:192.0.2.0/24 ip6:2001:db8::/32 include:_spf.example.net mx -all"</template>
+<template id="t-dmarc">_dmarc.example.com. 300 IN TXT "v=DMARC1; p=quarantine; sp=reject; rua=mailto:dmarc@example.com,mailto:agg@reports.example.net!10m; adkim=s; fo=1"</template>
+<template id="t-dkim">mail._domainkey.example.com. 300 IN TXT "v=DKIM1; k=rsa; t=y; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAo/vMG1rrinYiQMthKCXZZP3ugq8QzfQRjTkm3zRtAKly0n95TUj4LUadNa8pYEmHx+jdMcBMLC6OmPiKeufpTvjBC1Ft/AHYaCaEwBD23nxH/JWQ7W5RwEkyx2VO9Q3gS5K/NZkWlRsY8D3HSPc8j5q5L8/MsCDrF1i7/BgESGvuHvqe5Pgt4nqkrASflFdQWitIwr3hDzfZPgXuEPoIKVg/xHaTszN90sbLniDWviuqL/y94YPr9fp2IdJNkYmal3" "HCGyXvp5iAhhY2PsSqPexYF9jnOHQz2Duk0R2p7HsH6glhfT8dJM/COiZtAKISYo+RMf9Tt8V5xrERP3fA4QIDAQAB"</template>
+<template id="t-nasty">example.com. 3600 IN TXT "v=spf1 ptr include:aspmx.example.net a:one.example a:two.example mx:three.example exists:%{i}.rbl.example include:four.example include:five.example include:six.example mx a +all redirect=other.example"</template>
+
+  <script type="module">
+    import { analyze, evaluateSPF, LOOKUP_MECHS, RecordError } from "./spf.js";
+
+    const $ = (id) => document.getElementById(id);
+    const src = $("src"), err = $("err"), out = $("out");
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const row = (label, value) => value ? `<tr><th>${esc(label)}</th><td>${value}</td></tr>` : "";
+    let analyzed = null;
+
+    const QUAL_WORD = { pass: "Allow", fail: "Reject", softfail: "Soft-fail (accept but mark)", neutral: "State no opinion" };
+
+    function cidrText(t) {
+      const parts = [];
+      if (t.cidr4 !== null && t.cidr4 !== 32) parts.push(`IPv4 /${t.cidr4}`);
+      if (t.cidr6 !== null && t.cidr6 !== 128) parts.push(`IPv6 /${t.cidr6}`);
+      return parts.length ? ` (matching the surrounding ${parts.join(" and ")} network)` : "";
+    }
+
+    function termMeaning(t) {
+      const dom = t.domain ? `<span class="mono">${esc(t.domain)}</span>` : "the domain itself";
+      const act = QUAL_WORD[t.result];
+      switch (t.name) {
+        case "all": return `${act} for everything that reaches this point — the record's final word.`;
+        case "ip4": case "ip6": return `${act} if the sender's IP is in this network.`;
+        case "a": return `${act} if the sender's IP is an A/AAAA address of ${dom}${cidrText(t)}.`;
+        case "mx": return `${act} if the sender's IP belongs to one of ${dom}'s MX mail servers${cidrText(t)}.`;
+        case "include": return `${act} if the SPF record of ${dom} allows the sender. Counts one lookup here plus everything ${dom}'s record uses.`;
+        case "exists": return `${act} if an A record exists for ${dom}${t.macros ? " (built per message from macros)" : ""}.`;
+        case "ptr": return `${act} if the sender's reverse DNS points into ${dom} — deprecated, see warning.`;
+        case "redirect": return `If nothing above matched, evaluate <span class="mono">${esc(t.value)}</span>'s record in place of this one.`;
+        case "exp": return `On failure, fetch a human-readable explanation string from <span class="mono">${esc(t.value)}</span>. Rarely supported.`;
+        default: return `Unknown modifier — ignored by receivers.`;
+      }
+    }
+
+    function spfCard(res, idx) {
+      const rows = res.terms.map((t) => {
+        if (t.kind === "invalid") return `<tr><td class="q-fail">${esc(t.raw)}</td><td class="q-fail">${esc(t.error)}</td><td></td></tr>`;
+        const cls = t.kind === "mechanism" ? `q-${t.result}` : "";
+        const lookup = (t.kind === "mechanism" && LOOKUP_MECHS.has(t.name)) || t.name === "redirect" ? `<span class="lookup">1 lookup</span>` : "";
+        return `<tr><td class="${cls}">${esc(t.raw)}</td><td>${termMeaning(t)}</td><td>${lookup}</td></tr>`;
+      }).join("");
+      return `<table class="terms"><tbody>${rows}</tbody></table>
+        <div class="iptest">
+          <label for="ip${idx}">Would an IP match?</label>
+          <input id="ip${idx}" data-idx="${idx}" spellcheck="false" placeholder="192.0.2.55 or 2001:db8::5">
+          <span class="verdict" id="ipv${idx}"></span>
+        </div>`;
+    }
+
+    const POLICY_TEXT = { none: "delivered normally (monitoring only)", quarantine: "quarantined (spam folder)", reject: "rejected outright" };
+    const ALIGN = { r: "relaxed — any subdomain of the From domain aligns", s: "strict — exact domain match required" };
+
+    function dmarcCard(res) {
+      const e = res.effective;
+      if (!e) return "";
+      const uris = (list) => list.map((u) => esc(u.address ?? u.uri) + (u.sizeLimit ? ` (limit ${esc(u.sizeLimit)})` : "")).join("<br>");
+      return `<table class="results">
+        ${row("Failing mail from the domain", esc(POLICY_TEXT[e.p]))}
+        ${row("From existing subdomains", esc(POLICY_TEXT[e.sp]))}
+        ${row("From non-existent subdomains", esc(POLICY_TEXT[e.np]))}
+        ${row("DKIM alignment", esc(ALIGN[e.adkim]))}
+        ${row("SPF alignment", esc(ALIGN[e.aspf]))}
+        ${row("Aggregate reports to", uris(res.rua))}
+        ${row("Failure reports to", uris(res.ruf))}
+        ${row("Failure report options", esc(e.fo.join(", ")))}
+        ${e.testing ? row("Testing mode", `<span class="q-softfail">on — policies evaluated but not applied</span>`) : ""}
+      </table>`;
+    }
+
+    function dkimCard(res) {
+      const status = res.error ? "" : res.revoked
+        ? `<span class="q-fail">revoked (empty p=)</span>`
+        : `<span class="q-pass">usable public key</span>`;
+      const keyDesc = res.keyBits ? `${esc(res.algorithm)}, ${res.keyBits} bits` : esc(res.algorithm ?? "");
+      return `<table class="results">
+        ${row("Selector", res.selector ? `<span class="mono">${esc(res.selector)}</span>` : "")}
+        ${row("Domain", res.domain ? `<span class="mono">${esc(res.domain)}</span>` : "")}
+        ${row("Status", status)}
+        ${row("Key", keyDesc)}
+        ${row("Hash algorithms", res.hashes ? esc(res.hashes.join(", ")) : "")}
+        ${row("Flags", res.flags.length ? esc(res.flags.join(", ")) : "")}
+        ${row("Notes (n=)", esc(res.tags.find((t) => t.name === "n")?.value ?? ""))}
+      </table>`;
+    }
+
+    function tagsTable(res) {
+      if (!res.tags?.length) return "";
+      const rows = res.tags.map((t) =>
+        `<tr><td class="mono">${esc(t.name)}=${esc(t.value)}</td><td>${t.unknown ? "ignored (unknown tag)" : t.legacy ? "legacy (RFC 7489)" : ""}</td></tr>`).join("");
+      return `<details><summary>Raw tags</summary><table class="terms"><tbody>${rows}</tbody></table></details>`;
+    }
+
+    function render(a) {
+      const parts = [];
+      for (const w of a.cross) parts.push(`<div class="fatal">${esc(w)}</div>`);
+      a.results.forEach((res, idx) => {
+        const head = `<h2>${esc(res.label)}${res.name ? ` <span class="name">at ${esc(res.name)}</span>` : ""}</h2>
+          <div class="hint" style="word-break:break-all">${esc(res.record)}</div>`;
+        const fatal = res.error ? `<div class="fatal"><strong>Unusable record:</strong> ${esc(res.error)}</div>` : "";
+        const warns = res.warnings.map((w) => `<div class="warn">${esc(w)}</div>`).join("");
+        const infos = res.infos.map((w) => `<div class="info">${esc(w)}</div>`).join("");
+        const clear = !res.error && !res.warnings.length ? `<div class="allclear">No problems found in this record.</div>` : "";
+        let body = "";
+        if (!res.error) {
+          if (res.type === "spf") body = spfCard(res, idx);
+          else if (res.type === "dmarc") body = dmarcCard(res) + tagsTable(res);
+          else if (res.type === "dkim") body = dkimCard(res) + tagsTable(res);
+          else body = tagsTable(res);
+        }
+        parts.push(`<div class="card">${head}${fatal}${clear}${warns}${infos}${body}</div>`);
+      });
+      if (a.skipped.length) parts.push(`<div class="hint">${a.skipped.length} other TXT record${a.skipped.length > 1 ? "s" : ""} in the input ${a.skipped.length > 1 ? "are" : "is"} not a mail policy record — skipped.</div>`);
+      out.innerHTML = parts.join("");
+      for (const input of out.querySelectorAll(".iptest input")) {
+        input.addEventListener("input", () => {
+          const res = analyzed.results[Number(input.dataset.idx)];
+          const box = $("ipv" + input.dataset.idx);
+          if (!input.value.trim()) { box.textContent = ""; return; }
+          const v = evaluateSPF(res, input.value.trim());
+          if (v.result === null) { box.innerHTML = `<span class="q-neutral">${esc(v.detail)}</span>`; return; }
+          if (v.result === "needs-dns") { box.innerHTML = `<span class="q-softfail">undecidable offline:</span> <span class="q-neutral">${esc(v.detail)}</span>`; return; }
+          const cls = { pass: "q-pass", fail: "q-fail", softfail: "q-softfail", neutral: "q-neutral", permerror: "q-fail" }[v.result] ?? "";
+          box.innerHTML = `<span class="${cls}">${esc(v.result)}</span>` +
+            (v.matched ? ` <span class="q-neutral">— matched <span class="mono">${esc(v.matched)}</span></span>`
+                       : ` <span class="q-neutral">— ${esc(v.detail ?? "")}</span>`);
+        });
+      }
+    }
+
+    function update() {
+      err.textContent = "";
+      if (!src.value.trim()) { out.innerHTML = ""; analyzed = null; return; }
+      try {
+        analyzed = analyze(src.value);
+        render(analyzed);
+      } catch (e) {
+        out.innerHTML = ""; analyzed = null;
+        err.textContent = e instanceof RecordError ? e.message : "Unexpected error: " + e.message;
+      }
+    }
+
+    src.addEventListener("input", update);
+    for (const btn of document.querySelectorAll("[data-ex]")) {
+      btn.addEventListener("click", () => { src.value = $(btn.dataset.ex).content.textContent.trim(); update(); });
+    }
+    $("ex-clear").addEventListener("click", () => { src.value = ""; update(); });
+  </script>
+</body>
+</html>
