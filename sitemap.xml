@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://unsent.tools/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/testing/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/base/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/bytes/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/cert/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/chmod/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/color/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/cron/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/csr/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/diff/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/email/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/epoch/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/hash/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/jwt/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/qr/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/spf/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/sshkey/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/subnet/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/unicode/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/url/</loc><lastmod>2026-08-27</lastmod></url>
+  <url><loc>https://unsent.tools/tools/uuid/</loc><lastmod>2026-08-27</lastmod></url>
+</urlset>
