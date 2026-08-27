@@ -126,6 +126,21 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   SHA256/MD5 fingerprints and the randomart drawing, all byte-compatible
   with ssh-keygen, which is exactly what the tests compare against.
   Private keys are refused with a warning, never parsed.
+- **[email](https://unsent.tools/tools/email/)** — email header analyzer:
+  the Received chain as a timeline with per-hop delays, SPF/DKIM/DMARC
+  verdicts from Authentication-Results, DKIM-Signature inspection (including
+  the `l=` footgun), decoded RFC 2047 subjects/names, and spoofing red flags
+  (Reply-To mismatch, display-name addresses, forged Date). Header parsing,
+  dates, address lists, and encoded-words are differential-tested against
+  Python's `email` stdlib. Headers carry IPs and account names — the whole
+  point is that they never leave your browser.
+- **[unicode](https://unsent.tools/tools/unicode/)** — Unicode inspector:
+  every codepoint with its official UCD name, category, and script;
+  grapheme/codepoint/UTF-16/UTF-8 counts; NFC/NFD/NFKC/NFKD; warnings for
+  zero-widths, bidirectional controls (Trojan Source), tag characters,
+  space lookalikes, and mixed-script homographs. Character data generated
+  from UCD 15.0.0; names/categories differential-tested against Python's
+  `unicodedata`, the script table against Node's own ICU.
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested

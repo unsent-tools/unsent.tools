@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Email header analyzer — unsent.tools</title>
+  <meta name="description" content="Analyze raw email headers: Received delivery chain with per-hop delays, SPF/DKIM/DMARC authentication results, spoofing red flags, decoded subject and addresses. Entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    textarea {
+      width: 100%; min-height: 12rem; resize: vertical; font-family: var(--mono);
+      font-size: 0.8rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem;
+      box-sizing: border-box;
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
+    .card {
+      margin-top: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; background: var(--card);
+    }
+    .card h2 { margin: 0 0 0.4rem; font-size: 1.02rem; }
+    .warn {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--bad, #c94f4f);
+      border-radius: 6px;
+    }
+    .info {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 6px; color: var(--fg);
+    }
+    .allclear { color: var(--ok, #3a9d5d); font-size: 0.92rem; margin: 0.6rem 0; }
+    table.results td { word-break: break-word; }
+    table.chain { width: 100%; font-size: 0.85rem; }
+    table.chain th { text-align: left; color: var(--muted); font-weight: 600; padding: 0.25rem 0.5rem; }
+    table.chain td { padding: 0.25rem 0.5rem; vertical-align: top; word-break: break-word; }
+    .delay { white-space: nowrap; color: var(--muted); }
+    .delay.slow { color: var(--bad, #c94f4f); }
+    .authres { font-family: var(--mono); font-size: 0.85rem; }
+    .pass { color: var(--ok, #3a9d5d); }
+    .fail { color: var(--bad, #c94f4f); }
+    .headers-raw td:first-child { white-space: nowrap; color: var(--muted); }
+    details { margin-top: 1rem; }
+    details summary { cursor: pointer; color: var(--accent); font-size: 0.92rem; }
+    .totals { color: var(--muted); font-size: 0.88rem; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">email header analyzer</span>
+    </header>
+
+    <h1>Email header analyzer</h1>
+    <p class="lede">
+      Paste the raw headers of an email (or the whole raw message) and see the
+      route it actually took: every relay hop with per-hop delays, SPF / DKIM /
+      DMARC verdicts, and the classic spoofing red flags. Headers carry IP
+      addresses, account names, and server names — exactly the things not to
+      paste into a server-side analyzer. Here, nothing you paste leaves this
+      page.
+    </p>
+
+    <label for="src">Raw headers</label>
+    <textarea id="src" spellcheck="false" autocomplete="off" autocapitalize="off"
+              placeholder="Delivered-To: you@example.com&#10;Received: from mail.sender.org …&#10;From: Someone <someone@sender.org>&#10;…"
+              aria-describedby="hint err"></textarea>
+    <div class="hint" id="hint">In most mail clients: “Show original”, “View source”, or “View raw message”. A body after the blank line is ignored — it never leaves your browser either way.</div>
+    <div class="error" id="err" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" id="ex-clean">a normal delivery</button>
+      <button type="button" id="ex-phish">a phishy one</button>
+      <button type="button" id="ex-clear">clear</button>
+    </div>
+
+    <div id="out"></div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+<template id="t-clean">Delivered-To: user@example.com
+Received: by 2002:a05:6a10:1234:0:0:0:0 with SMTP id abc123;
+        Tue, 26 Aug 2026 05:01:04 -0700 (PDT)
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.example.com (Postfix) with ESMTPS id 4XyZ12AbCd
+        for &lt;user@example.com&gt;;
+        Tue, 26 Aug 2026 05:01:03 -0700 (PDT)
+Received: from sender-host ([10.0.0.5])
+        by smtp.sender.org with ESMTPSA;
+        Tue, 26 Aug 2026 05:01:00 -0700 (PDT)
+Authentication-Results: mx.example.com;
+       dkim=pass header.i=@sender.org header.s=sel1 header.b=AbCdEf;
+       spf=pass (sender IP is 209.85.220.41) smtp.mailfrom=sender.org;
+       dmarc=pass (p=NONE) header.from=sender.org
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=sender.org; s=sel1;
+        t=1787490060; h=from:to:subject:date:message-id;
+        bh=47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=; b=dGVzdA==
+From: =?utf-8?B?SsO8cmdlbg==?= Sender &lt;j@sender.org&gt;
+To: user@example.com
+Subject: =?utf-8?Q?Caf=C3=A9?= meeting
+Date: Tue, 26 Aug 2026 05:00:58 -0700
+Message-ID: &lt;20260826120058.GA1234@sender.org&gt;</template>
+
+<template id="t-phish">Received: from mx.big.example (mx.big.example [198.51.100.7])
+        by inbox.example.net; Tue, 26 Aug 2026 12:00:00 +0000
+Received: from unknown (HELO spam-relay) ([203.0.113.9])
+        by mx.big.example; Tue, 26 Aug 2026 12:30:00 +0000
+Authentication-Results: inbox.example.net;
+       spf=softfail smtp.mailfrom=bounce.shady.example;
+       dkim=fail reason="bad signature" header.d=paypal.example;
+       dmarc=fail reason="p=reject" header.from=paypal.example
+From: "PayPal Support &lt;support@paypal.example&gt;" &lt;alerts@shady.example&gt;
+Reply-To: collector@other.example
+To: victim@example.net
+Subject: Your account has been limited
+Date: Mon, 25 Aug 2026 03:00:00 +0000
+Message-ID: &lt;x@shady.example&gt;</template>
+
+  <script type="module">
+    import { analyze, decodeWords, fmtDelay, EmailError } from "./email.js";
+
+    const $ = (id) => document.getElementById(id);
+    const src = $("src"), err = $("err"), out = $("out");
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    const row = (label, value) =>
+      value ? `<tr><th>${esc(label)}</th><td>${value}</td></tr>` : "";
+
+    const mailboxes = (list) => list.map((mb) => {
+      const disp = decodeWords(mb.display).text;
+      return esc(disp ? `${disp} <${mb.address}>` : mb.address || `(${mb.comment ?? "empty"})`);
+    }).join(", ");
+
+    function fmtStamp(d) {
+      if (!d) return "";
+      const iso = new Date(d.epochMs).toISOString().replace(".000Z", "Z");
+      return d.offsetMin === null ? `${iso} (zone unknown)` : iso;
+    }
+
+    function chainTable(chain) {
+      if (!chain.hops.length) return "<p class='totals'>No Received headers — this block never passed through an MTA (or they were stripped).</p>";
+      const rows = chain.hops.map((h, i) => {
+        const slow = h.delayMs !== null && (h.delayMs > 120000 || h.delayMs < -120000);
+        return `<tr>
+          <td>${i + 1}</td>
+          <td>${esc(h.clauses.from ?? "—")}${h.ips.length ? `<br><span class="hint" style="display:inline">${esc(h.ips.join(", "))}</span>` : ""}</td>
+          <td>${esc(h.clauses.by ?? "—")}</td>
+          <td>${esc(h.clauses.with ?? "")}</td>
+          <td>${esc(fmtStamp(h.date) || h.dateText || "")}</td>
+          <td class="delay${slow ? " slow" : ""}">${h.delayMs === null ? "" : (h.delayMs < 0 ? "−" : "+") + fmtDelay(Math.abs(h.delayMs))}</td>
+        </tr>`;
+      }).join("");
+      const total = chain.totalMs !== null ? `<p class="totals">Total transit time across the chain: <strong>${esc(fmtDelay(chain.totalMs))}</strong>. Hop 1 is the origin; the top of the raw headers is the last hop.</p>` : "";
+      return `<table class="chain"><thead><tr><th>#</th><th>from</th><th>by</th><th>proto</th><th>timestamp (UTC)</th><th>delay</th></tr></thead><tbody>${rows}</tbody></table>${total}`;
+    }
+
+    function authBlock(a) {
+      const parts = [];
+      for (const ar of a.auth) {
+        const items = ar.results.map((r) => {
+          const cls = r.result === "pass" ? "pass" : (r.result ? "fail" : "");
+          const props = r.props.map((p) => `${p.ptype ? p.ptype + "." : ""}${p.prop}=${p.value}`).join(" ");
+          return `<div class="authres"><span class="${cls}">${esc(r.method)}${r.result ? "=" + esc(r.result) : ""}</span>${r.reason ? " (" + esc(r.reason) + ")" : ""}${props ? " · " + esc(props) : ""}</div>`;
+        }).join("");
+        parts.push(`<div>${ar.authserv ? `<div class="hint" style="display:inline">verified by ${esc(ar.authserv)}</div>` : ""}${items}</div>`);
+      }
+      for (const d of a.dkim) {
+        parts.push(`<div class="authres">DKIM signature: d=${esc(d.domain ?? "?")} s=${esc(d.selector ?? "?")} a=${esc(d.algorithm ?? "?")}${d.signedHeaders.length ? " · signs " + esc(d.signedHeaders.join(", ")) : ""}</div>`);
+      }
+      if (!parts.length) return "";
+      return `<div class="card"><h2>Authentication</h2>${parts.join("")}</div>`;
+    }
+
+    function render(a) {
+      const warn = a.warnings.map((w) => `<div class="warn">${esc(w)}</div>`).join("");
+      const info = [...a.infos, ...a.notes].map((w) => `<div class="info">${esc(w)}</div>`).join("");
+      const clear = a.warnings.length ? "" : `<div class="allclear">No red flags found in these headers.</div>`;
+      const summary = `<div class="card"><h2>Summary</h2><table class="results">
+        ${row("Subject", a.subject ? esc(a.subject.text) : "")}
+        ${row("From", mailboxes(a.from))}
+        ${row("To", mailboxes(a.to))}
+        ${row("Reply-To", mailboxes(a.replyTo))}
+        ${row("Date", a.dateHeader ? esc(fmtStamp(a.dateHeader)) : "")}
+        ${row("Message-ID", a.messageId ? esc(a.messageId) : "")}
+        ${row("Return-Path", a.returnPath ? esc(a.returnPath) : "")}
+      </table></div>`;
+      const chain = `<div class="card"><h2>Delivery chain</h2>${chainTable(a.chain)}</div>`;
+      const headers = `<details><summary>All ${a.headers.length} headers (unfolded)</summary>
+        <table class="results headers-raw">${a.headers.map((h) =>
+          `<tr><td>${esc(h.name)}</td><td>${esc(decodeWords(h.value).text)}</td></tr>`).join("")}
+        </table></details>`;
+      out.innerHTML = clear + warn + info + summary + chain + authBlock(a) + headers;
+    }
+
+    function update() {
+      err.textContent = "";
+      const text = src.value;
+      if (!text.trim()) { out.innerHTML = ""; return; }
+      try {
+        render(analyze(text, Date.now()));
+      } catch (e) {
+        out.innerHTML = "";
+        if (e instanceof EmailError) err.textContent = e.message;
+        else err.textContent = "Unexpected error: " + e.message;
+      }
+    }
+
+    src.addEventListener("input", update);
+    $("ex-clean").addEventListener("click", () => { src.value = $("t-clean").content.textContent.trim(); update(); });
+    $("ex-phish").addEventListener("click", () => { src.value = $("t-phish").content.textContent.trim(); update(); });
+    $("ex-clear").addEventListener("click", () => { src.value = ""; update(); });
+  </script>
+</body>
+</html>
