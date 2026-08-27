@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unicode inspector — unsent.tools</title>
+  <meta name="description" content="See what is really in a string: every codepoint with name and script, grapheme/byte counts, normalization forms, and warnings for invisible characters, bidi controls, and homograph lookalikes. Entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    textarea {
+      width: 100%; min-height: 6.5rem; resize: vertical; font-family: var(--mono);
+      font-size: 0.95rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem;
+      box-sizing: border-box;
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
+    .card {
+      margin-top: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; background: var(--card);
+    }
+    .card h2 { margin: 0 0 0.4rem; font-size: 1.02rem; }
+    .warn {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--bad, #c94f4f);
+      border-radius: 6px;
+    }
+    .info {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 6px;
+    }
+    .allclear { color: var(--ok, #3a9d5d); font-size: 0.92rem; margin: 0.6rem 0; }
+    .counts { display: flex; flex-wrap: wrap; gap: 1.4rem; }
+    .counts div { text-align: center; }
+    .counts .num { font-size: 1.5rem; font-family: var(--mono); }
+    .counts .lbl { color: var(--muted); font-size: 0.82rem; }
+    table.cps { width: 100%; font-size: 0.85rem; border-collapse: collapse; }
+    table.cps th { text-align: left; color: var(--muted); font-weight: 600; padding: 0.25rem 0.5rem; }
+    table.cps td { padding: 0.22rem 0.5rem; vertical-align: top; border-top: 1px solid var(--border); }
+    td.glyph { font-size: 1.15rem; text-align: center; min-width: 2rem; }
+    td.cp-hex, td.bytes { font-family: var(--mono); white-space: nowrap; }
+    td.cp-name { word-break: break-word; }
+    .cat { color: var(--muted); font-size: 0.8rem; }
+    .normrow { display: flex; align-items: baseline; gap: 0.6rem; margin: 0.3rem 0; flex-wrap: wrap; }
+    .normrow code { word-break: break-all; }
+    .normrow .same { color: var(--muted); font-size: 0.85rem; }
+    .normrow button {
+      font-family: var(--mono); font-size: 0.8rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.15rem 0.55rem; cursor: pointer;
+    }
+    .normrow button:hover { border-color: var(--accent); }
+    .truncated { color: var(--muted); font-size: 0.85rem; margin-top: 0.4rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">unicode inspector</span>
+    </header>
+
+    <h1>Unicode inspector</h1>
+    <p class="lede">
+      Paste any text and see what it actually contains: every codepoint with
+      its official name and script, grapheme / codepoint / byte counts, the
+      four normalization forms, and warnings for the characters that cause
+      real trouble — invisible zero-widths, bidirectional controls, and
+      Cyrillic letters pretending to be Latin. Nothing you paste leaves this
+      page.
+    </p>
+
+    <label for="src">Text</label>
+    <textarea id="src" spellcheck="false" autocomplete="off"
+              placeholder="Paste a suspicious filename, domain, identifier, or any text…"
+              aria-describedby="hint"></textarea>
+    <div class="hint" id="hint">Unicode <span id="uver"></span> data, generated from the Unicode Character Database.</div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-ex="homograph">a homograph domain</button>
+      <button type="button" data-ex="bidi">a bidi filename trick</button>
+      <button type="button" data-ex="emoji">an emoji family</button>
+      <button type="button" data-ex="zero">hidden zero-widths</button>
+      <button type="button" id="ex-clear">clear</button>
+    </div>
+
+    <div id="out"></div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import { inspect, UNICODE_VERSION, CATEGORY_NAMES } from "./unicode.js";
+
+    const $ = (id) => document.getElementById(id);
+    const src = $("src"), out = $("out");
+    $("uver").textContent = UNICODE_VERSION;
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    const EXAMPLES = {
+      homograph: "pаypal.com",
+      bidi: "invoice_‮gpj.exe",
+      emoji: "\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}",
+      zero: "cle​an⁠-look‌ing",
+    };
+    const MAXROWS = 1500;
+
+    // Show invisible/space characters as a dotted placeholder in the glyph cell.
+    function glyphCell(c) {
+      if (c.category === "Cc" || c.category === "Cf" || c.category === "Cn" ||
+          c.category === "Zs" || c.category === "Zl" || c.category === "Zp" ||
+          c.category.startsWith("M")) {
+        return `<span class="cat">◌</span>`;
+      }
+      return esc(c.char);
+    }
+
+    function render(r) {
+      const warn = r.warnings.map((w) => `<div class="warn">${esc(w)}</div>`).join("");
+      const info = r.notes.map((n) => `<div class="info">${esc(n)}</div>`).join("");
+      const clear = r.warnings.length ? "" : `<div class="allclear">No suspicious characters found.</div>`;
+
+      const counts = `<div class="card"><h2>Counts</h2><div class="counts">
+        <div><div class="num">${r.counts.graphemes ?? "–"}</div><div class="lbl">graphemes<br>(what you see)</div></div>
+        <div><div class="num">${r.counts.codepoints}</div><div class="lbl">codepoints</div></div>
+        <div><div class="num">${r.counts.utf16Units}</div><div class="lbl">UTF-16 units<br>(JS .length)</div></div>
+        <div><div class="num">${r.counts.utf8Bytes}</div><div class="lbl">UTF-8 bytes</div></div>
+      </div></div>`;
+
+      const norm = `<div class="card"><h2>Normalization</h2>` +
+        ["NFC", "NFD", "NFKC", "NFKD"].map((f) => {
+          const v = r.forms[f];
+          return `<div class="normrow"><strong>${f}</strong>` +
+            (v.changed
+              ? `<code>${esc(v.text)}</code> <button type="button" data-norm="${f}">use this</button>`
+              : `<span class="same">unchanged — already ${f}-normalized</span>`) +
+            `</div>`;
+        }).join("") +
+        `<div class="hint">NFC/NFD are lossless (composition only); NFKC/NFKD also fold compatibility characters like ﬁ → fi.</div></div>`;
+
+      const rows = r.chars.slice(0, MAXROWS).map((c) => `<tr>
+        <td class="glyph">${glyphCell(c)}</td>
+        <td class="cp-hex">${c.hex}</td>
+        <td class="cp-name">${c.name ? esc(c.name) : "<span class='cat'>(no name)</span>"}
+          <span class="cat">${esc(c.category)}${CATEGORY_NAMES[c.category] ? " · " + esc(CATEGORY_NAMES[c.category]) : ""}${c.script !== "Common" && c.script !== "Unknown" ? " · " + esc(c.script) : ""}</span></td>
+        <td class="bytes">${c.utf8.map((b) => b.toString(16).padStart(2, "0")).join(" ")}</td>
+      </tr>`).join("");
+      const truncated = r.chars.length > MAXROWS
+        ? `<div class="truncated">Showing the first ${MAXROWS} of ${r.chars.length} codepoints.</div>` : "";
+      const table = `<div class="card"><h2>Codepoints</h2>
+        <table class="cps"><thead><tr><th></th><th>codepoint</th><th>name</th><th>UTF-8</th></tr></thead>
+        <tbody>${rows}</tbody></table>${truncated}</div>`;
+
+      out.innerHTML = clear + warn + info + counts + norm + table;
+      for (const b of out.querySelectorAll("button[data-norm]")) {
+        b.addEventListener("click", () => { src.value = r.forms[b.dataset.norm].text; update(); });
+      }
+    }
+
+    function update() {
+      if (src.value === "") { out.innerHTML = ""; return; }
+      render(inspect(src.value));
+    }
+
+    src.addEventListener("input", update);
+    for (const b of document.querySelectorAll("button[data-ex]")) {
+      b.addEventListener("click", () => { src.value = EXAMPLES[b.dataset.ex]; update(); });
+    }
+    $("ex-clear").addEventListener("click", () => { src.value = ""; update(); });
+  </script>
+</body>
+</html>
