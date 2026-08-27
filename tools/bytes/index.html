@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data size converter — bytes, bits, GB vs GiB — unsent.tools</title>
+  <meta name="description" content="Convert data sizes exactly: bytes, bits, kB/MB/GB vs KiB/MiB/GiB, the disk-marketing gap, kb-vs-kB ambiguity, and transfer times at any bandwidth. Exact arithmetic, entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 560px) { .inputs { grid-template-columns: 1fr; } }
+    .inputs input {
+      width: 100%; font-family: var(--mono); font-size: 0.95rem;
+      background: var(--card); color: var(--fg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.55rem 0.7rem; box-sizing: border-box;
+    }
+    .inputs input:focus { outline: none; border-color: var(--accent); }
+    .card {
+      margin-top: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; background: var(--card);
+    }
+    .card h2 { margin: 0 0 0.4rem; font-size: 1.02rem; }
+    .warn {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--bad, #c94f4f);
+      border-radius: 6px;
+    }
+    .info {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 6px;
+    }
+    table.conv { width: 100%; font-size: 0.9rem; border-collapse: collapse; }
+    table.conv td, table.conv th { padding: 0.3rem 0.5rem; border-top: 1px solid var(--border); text-align: left; }
+    table.conv td:first-child { color: var(--muted); white-space: nowrap; width: 8rem; }
+    table.conv td:nth-child(2) { font-family: var(--mono); word-break: break-all; }
+    .big { font-size: 1.25rem; font-family: var(--mono); margin: 0.4rem 0; word-break: break-all; }
+    .muted { color: var(--muted); }
+    .mono { font-family: var(--mono); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">bytes · bits · GB vs GiB</span>
+    </header>
+
+    <h1>Data size converter</h1>
+    <p class="lede">
+      The two oldest confusions in computing, made explicit: decimal units
+      (1&nbsp;GB = 10⁹ bytes) versus binary units (1&nbsp;GiB = 2³⁰ bytes), and
+      bits versus bytes (lowercase&nbsp;b versus uppercase&nbsp;B — an 8×
+      difference that network marketing leans on). Conversions are computed
+      with exact arithmetic, not floating point.
+    </p>
+
+    <div class="inputs">
+      <div>
+        <label for="size">Size</label>
+        <input id="size" spellcheck="false" autocomplete="off" placeholder="1.5 GB, 3 GiB, 200 Mbit, 1048576"
+               aria-describedby="err">
+      </div>
+      <div>
+        <label for="rate">Bandwidth <span class="muted">(optional)</span></label>
+        <input id="rate" spellcheck="false" autocomplete="off" placeholder="100 Mbps, 25 MB/s, 1 Gbit/s"
+               aria-describedby="raterr">
+      </div>
+    </div>
+    <div class="error" id="err" role="alert"></div>
+    <div class="error" id="raterr" role="alert"></div>
+
+    <div class="examples">
+      Try:
+      <button type="button" data-size="500 GB" data-rate="">the 500 GB drive</button>
+      <button type="button" data-size="4.7 GB" data-rate="56 kbps">a DVD over dial-up</button>
+      <button type="button" data-size="500 mb" data-rate="">ambiguous “mb”</button>
+      <button type="button" data-size="1 Gbit" data-rate="">1 Gbit</button>
+      <button type="button" id="ex-clear">clear</button>
+    </div>
+
+    <div id="out"></div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+  <script type="module">
+    import {
+      parseSize, parseRate, rationalToDecimal, autoUnit, convertTable,
+      transferSeconds, formatDuration, rDiv, rCmp, rational, SizeError,
+    } from "./bytes.js";
+
+    const $ = (id) => document.getElementById(id);
+    const size = $("size"), rate = $("rate"), err = $("err"), raterr = $("raterr"), out = $("out");
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const group = (s) => s.replace(/^(\d+)/, (m) => Number(m) <= 1e20 ? m.replace(/\B(?=(\d{3})+(?!\d))/g, ",") : m);
+
+    const UNIT_WORDS = {
+      B: "bytes", kB: "kilobytes", MB: "megabytes", GB: "gigabytes", TB: "terabytes", PB: "petabytes", EB: "exabytes",
+      KiB: "kibibytes (2¹⁰)", MiB: "mebibytes (2²⁰)", GiB: "gibibytes (2³⁰)", TiB: "tebibytes (2⁴⁰)", PiB: "pebibytes (2⁵⁰)", EiB: "exbibytes (2⁶⁰)",
+      b: "bits", kb: "kilobits", Mb: "megabits", Gb: "gigabits", Tb: "terabits", Pb: "petabits", Eb: "exabits",
+      Kib: "kibibits", Mib: "mebibits", Gib: "gibibits", Tib: "tebibits", Pib: "pebibits", Eib: "exbibits",
+    };
+
+    const REF_RATES = [["56 kbps", "dial-up modem"], ["10 Mbps", "slow DSL"], ["100 Mbps", "fast home broadband"], ["1 Gbps", "gigabit LAN"], ["10 Gbps", "datacenter link"]];
+
+    function sizeCard(s) {
+      const parts = [];
+      if (s.sloppy) {
+        parts.push(`<div class="warn">“${esc(s.input)}” is written in a form that matches no standard unit, so this is a guess: read as <b>${esc(UNIT_WORDS[s.unit] ?? s.unit)}</b> (${esc(s.unit)}), the common intent. If you meant ${esc(UNIT_WORDS[s.alt.unit] ?? s.alt.unit)} (${esc(s.alt.unit)}), that would be <span class="mono">${group(rationalToDecimal(s.alt.bytes, 21))}</span> bytes — capitalization decides: <b>B</b> is bytes, <b>b</b> is bits.</div>`);
+      } else if (s.isBits) {
+        parts.push(`<div class="info">Lowercase b: this is <b>${esc(UNIT_WORDS[s.unit] ?? s.unit)}</b> — bits, not bytes. ${esc(s.unit)} ÷ 8 gives the byte count below. (${esc(s.unit.replace(/b$/, "B"))} — uppercase B — would be 8× larger.)</div>`);
+      }
+      const bytes = s.bytes;
+      const exact = bytes.den === 1n;
+      const si = autoUnit(bytes, {}), iec = autoUnit(bytes, { binary: true });
+      parts.push(`<div class="big">${group(exact ? bytes.num.toString() : rationalToDecimal(bytes, 21))} bytes${exact ? "" : " (not a whole number of bytes)"}</div>`);
+      parts.push(`<div>= <b>${esc(si.text)} ${esc(si.unit)}</b> in decimal units, <b>${esc(iec.text)} ${esc(iec.unit)}</b> in binary units.</div>`);
+      // The marketing gap, shown where it bites (≥ 1 GB either way).
+      if (rCmp(bytes, rational(10n ** 9n)) >= 0) {
+        if (!s.binary) parts.push(`<div class="info">Storage is sold in decimal units but Windows displays binary units (labeled “GB/TB”): a drive sold as ${esc(si.text)} ${esc(si.unit)} shows up as about <b>${esc(iec.text)} ${esc(iec.unit.replace("i", ""))}</b> there. Nothing is missing — the units drift apart by about 2.4% per prefix step, compounding.</div>`);
+        else parts.push(`<div class="info">RAM and OS displays use binary units; in the decimal units storage vendors and networks use, this is ${esc(si.text)} ${esc(si.unit)}.</div>`);
+      }
+      const rows = convertTable(bytes).map((r) => `<tr><td>${esc(r.unit)}</td><td>${group(r.text)}</td><td class="muted">${esc(UNIT_WORDS[r.unit] ?? "")}</td></tr>`).join("");
+      parts.push(`<details><summary>All units</summary><table class="conv"><tbody>${rows}</tbody></table></details>`);
+      return `<div class="card"><h2>Size</h2>${parts.join("")}</div>`;
+    }
+
+    function transferCard(s, r) {
+      const rows = [];
+      if (r) {
+        const note = r.isBits ? "" : ` <span class="muted">(${rationalToDecimal(r.bitsPerSec, 4)} bits/s — uppercase B, so bytes per second)</span>`;
+        rows.push(`<tr><td>${esc(r.input)}</td><td>${esc(formatDuration(transferSeconds(s, r)))}</td><td>${note}</td></tr>`);
+      } else {
+        for (const [spec, label] of REF_RATES) {
+          rows.push(`<tr><td>${esc(spec)}</td><td>${esc(formatDuration(transferSeconds(s, parseRate(spec))))}</td><td class="muted">${esc(label)}</td></tr>`);
+        }
+      }
+      return `<div class="card"><h2>Transfer time</h2>
+        <table class="conv"><tbody>${rows}</tbody></table>
+        <div class="hint">Raw arithmetic (size ÷ rate). Real transfers add protocol overhead, latency, and congestion — treat these as best-case times.</div></div>`;
+    }
+
+    function update() {
+      err.textContent = ""; raterr.textContent = "";
+      const sv = size.value.trim(), rv = rate.value.trim();
+      if (!sv && !rv) { out.innerHTML = ""; return; }
+      let s = null, r = null;
+      if (sv) {
+        try { s = parseSize(sv); }
+        catch (e) { err.textContent = e instanceof SizeError ? e.message : "Unexpected error: " + e.message; }
+      }
+      if (rv) {
+        try { r = parseRate(rv); }
+        catch (e) { raterr.textContent = e instanceof SizeError ? e.message : "Unexpected error: " + e.message; }
+      }
+      let html = "";
+      if (s) {
+        html += sizeCard(s);
+        if (s.bytes.num > 0n && (!rv || r)) html += transferCard(s, r);
+      }
+      out.innerHTML = html;
+    }
+
+    size.addEventListener("input", update);
+    rate.addEventListener("input", update);
+    for (const btn of document.querySelectorAll("[data-size]")) {
+      btn.addEventListener("click", () => { size.value = btn.dataset.size; rate.value = btn.dataset.rate; update(); });
+    }
+    $("ex-clear").addEventListener("click", () => { size.value = ""; rate.value = ""; update(); });
+  </script>
+</body>
+</html>

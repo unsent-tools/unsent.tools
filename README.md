@@ -150,6 +150,14 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   values or dig/zone-file lines (multi-string TXT records are concatenated).
   Differential-tested against pyspf (mechanism grammar and full-record
   evaluation), checkdmarc, dkimpy's tag parser, and openssl-generated keys.
+- **[bytes](https://unsent.tools/tools/bytes/)** — data size converter:
+  bytes/bits and decimal/binary prefixes (GB vs GiB) with exact BigInt
+  rational arithmetic — no floating point anywhere. Strict notation
+  (lowercase b = bits) explained, sloppy forms ("500 mb") interpreted
+  charitably with the alternative shown, the disk-marketing gap quantified,
+  and transfer times for any size at any bandwidth. Differential-tested
+  against Python's humanfriendly and bitmath (which disagree with each
+  other about bits — documented) and fractions.Fraction for the exact math.
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested
