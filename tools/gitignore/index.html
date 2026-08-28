@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>.gitignore tester — why is this file ignored? — unsent.tools</title>
+  <meta name="description" content="Paste a .gitignore and test paths against it with git's exact rules: last match wins, negation, the excluded-parent trap, **, character classes — with the deciding pattern and line shown for every path. Entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .inputs textarea, .split textarea {
+      width: 100%; box-sizing: border-box; font-family: var(--mono);
+      font-size: 0.9rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem 0.7rem;
+    }
+    .inputs textarea:focus, .split textarea:focus { outline: none; border-color: var(--accent); }
+    #src { min-height: 12rem; }
+    #paths { min-height: 12rem; }
+    .split { display: grid; grid-template-columns: 3fr 2fr; gap: 1rem; }
+    @media (max-width: 640px) { .split { grid-template-columns: 1fr; } }
+    .card {
+      margin-top: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; background: var(--card);
+    }
+    .card h2 { margin: 0 0 0.5rem; font-size: 1.02rem; }
+    .warn, .info {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-radius: 6px;
+    }
+    .warn { border-left: 3px solid #c94f4f; }
+    .info { border-left: 3px solid var(--accent); }
+    .allclear { margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid #3f9c5c; border-radius: 6px; }
+    table.results { width: 100%; font-size: 0.9rem; border-collapse: collapse; }
+    table.results td, table.results th {
+      padding: 0.4rem 0.5rem; border-top: 1px solid var(--border);
+      text-align: left; vertical-align: top;
+    }
+    table.results th { font-weight: 600; }
+    .v-ok { color: #3f9c5c; font-weight: 600; }
+    .v-ign { color: #c94f4f; font-weight: 600; }
+    .mono { font-family: var(--mono); }
+    .muted { color: var(--muted); }
+    .lineref { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
+    .why { font-size: 0.85rem; color: var(--muted); }
+    .deadnote { font-size: 0.85rem; color: #c94f4f; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">.gitignore · check-ignore</span>
+    </header>
+
+    <h1>.gitignore tester</h1>
+    <p class="lede">
+      Paste a .gitignore and a list of paths, and see exactly what git will
+      do: ignored or not, decided by which pattern on which line — including
+      the rule everyone trips over, that a <span class="mono">!</span>negation
+      can never re-include a file whose parent directory is excluded. Same
+      answers as <span class="mono">git check-ignore -v</span>, entirely in
+      your browser.
+    </p>
+
+    <div class="split">
+      <div>
+        <label for="src">.gitignore</label>
+        <textarea id="src" spellcheck="false" placeholder="node_modules/&#10;*.log&#10;!important.log&#10;dist/"></textarea>
+      </div>
+      <div>
+        <label for="paths">Paths to test — one per line, end directories with /</label>
+        <textarea id="paths" spellcheck="false" placeholder="src/index.js&#10;debug.log&#10;node_modules/&#10;dist/app.js"></textarea>
+      </div>
+    </div>
+
+    <div class="examples">
+      <button type="button" data-ex="t-node">Node project</button>
+      <button type="button" data-ex="t-trap">The negation trap</button>
+      <button type="button" data-ex="t-docs">The docs example</button>
+      <button type="button" id="ex-clear">Clear</button>
+    </div>
+
+    <div id="out"></div>
+
+    <div class="card">
+      <h2>How .gitignore really works</h2>
+      <p style="font-size:0.9rem">
+        For each path, the <em>last</em> matching pattern in the file wins;
+        <span class="mono">!</span> in front re-includes instead of ignoring.
+        But before that, git walks the path's parent directories from the top:
+        if any of them is excluded, the path is ignored, full stop — git never
+        looks inside an excluded directory, so no later
+        <span class="mono">!</span> can rescue a file inside one. To carve an
+        exception you must re-include each directory level and exclude its
+        other contents (see the docs example above).
+      </p>
+      <p style="font-size:0.9rem">
+        A pattern with a <span class="mono">/</span> anywhere except the end
+        is anchored to the .gitignore's directory; otherwise it matches
+        basenames at any depth. A trailing <span class="mono">/</span> makes
+        it directories-only. <span class="mono">*</span> and
+        <span class="mono">?</span> never cross a slash;
+        <span class="mono">**</span> does, but only standing alone between
+        slashes (elsewhere it degrades to <span class="mono">*</span>).
+        Matching is byte-by-byte, so <span class="mono">?</span> matches one
+        byte, not one character: <span class="mono">caf?</span> does not
+        match <span class="mono">café</span>.
+      </p>
+      <p style="font-size:0.9rem" class="muted">
+        This tool models a single .gitignore at the repository root.
+        Nested .gitignore files, <span class="mono">.git/info/exclude</span>,
+        and <span class="mono">core.excludesFile</span> stack on top with the
+        same per-file rules. Already-tracked files are unaffected by
+        .gitignore either way.
+      </p>
+    </div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+<template id="t-node">node_modules/
+dist/
+*.log
+!important.log
+.env
+coverage/
+*.tsbuildinfo</template>
+<template id="t-node-paths">src/index.js
+node_modules/
+node_modules/react/index.js
+debug.log
+important.log
+logs/important.log
+.env
+dist/bundle.js</template>
+<template id="t-trap">build/
+!build/keep.txt
+*.log
+!logs/debug.log
+logs/</template>
+<template id="t-trap-paths">build/keep.txt
+build/other.txt
+logs/debug.log
+x.log</template>
+<template id="t-docs"># re-including inside an excluded tree, done right
+# (from the gitignore documentation)
+/*
+!/foo
+/foo/*
+!/foo/bar</template>
+<template id="t-docs-paths">foo/bar
+foo/bar/file.txt
+foo/baz
+other</template>
+
+  <script type="module">
+    import { parseGitignore, checkPath, lintNegations } from "./gitignore.js";
+
+    const $ = (id) => document.getElementById(id);
+    const src = $("src"), paths = $("paths"), out = $("out");
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    function verdictRows(parsed, list) {
+      return list.map((input) => {
+        const v = checkPath(parsed, input);
+        if (v.ignored === null) {
+          return `<tr><td class="mono">${esc(input)}</td><td class="muted" colspan="2">${esc(v.notes.join("; ") || "not testable")}</td></tr>`;
+        }
+        const verdict = v.ignored
+          ? `<span class="v-ign">ignored</span>`
+          : `<span class="v-ok">not ignored</span>`;
+        let why;
+        if (v.decider) {
+          why = `<span class="mono">${esc(v.decider.display)}</span> <span class="lineref">line ${v.decider.line}</span>`;
+          if (v.via !== null) {
+            why += `<div class="why">parent directory <span class="mono">${esc(v.via)}/</span> is excluded — git never looks inside it</div>`;
+          } else if (v.decider.negated) {
+            why += `<div class="why">explicitly re-included by the negation</div>`;
+          }
+        } else {
+          why = `<span class="why">no pattern matches</span>`;
+        }
+        const dead = v.ineffective.map((p) =>
+          `<div class="deadnote">the <span class="mono">${esc(p.display)}</span> on line ${p.line} matches this path but has no effect (excluded parent)</div>`
+        ).join("");
+        const notes = v.notes.length ? `<div class="why">${esc(v.notes.join(" · "))}</div>` : "";
+        return `<tr><td class="mono">${esc(v.path)}${v.isDir ? "/" : ""}</td><td>${verdict}</td><td>${why}${dead}${notes}</td></tr>`;
+      }).join("");
+    }
+
+    function render() {
+      const text = src.value;
+      if (!text.trim()) { out.innerHTML = ""; return; }
+      const parsed = parseGitignore(text);
+      const parts = [];
+
+      const list = paths.value.split("\n").map((s) => s.trim()).filter(Boolean);
+      const table = list.length
+        ? `<table class="results"><tr><th>Path</th><th>Verdict</th><th>Deciding pattern</th></tr>${verdictRows(parsed, list)}</table>`
+        : `<p class="muted" style="font-size:0.9rem">Add paths on the right to test them (end directories with /).</p>`;
+      parts.push(`<div class="card"><h2>Verdicts</h2>${table}</div>`);
+
+      const pats = parsed.patterns.map((p) => {
+        const traits = [];
+        if (p.negated) traits.push("re-include");
+        traits.push(p.anchored ? "anchored to root" : "matches at any depth");
+        if (p.dirOnly) traits.push("directories only");
+        return `<tr><td class="mono">${esc(p.display)}</td><td class="lineref">line ${p.line}</td><td class="why">${traits.join(" · ")}</td></tr>`;
+      }).join("");
+      parts.push(`<div class="card"><h2>${parsed.patterns.length} pattern${parsed.patterns.length === 1 ? "" : "s"}</h2>${pats ? `<table class="results">${pats}</table>` : '<p class="muted" style="font-size:0.9rem">No patterns — nothing is ignored.</p>'}</div>`);
+
+      const allWarnings = [...parsed.warnings, ...lintNegations(parsed)];
+      if (allWarnings.length) {
+        parts.push(`<div class="card"><h2>${allWarnings.length} warning${allWarnings.length === 1 ? "" : "s"}</h2>${allWarnings.map((w) => `<div class="warn">${esc(w.message)}</div>`).join("")}</div>`);
+      } else {
+        parts.push(`<div class="allclear">No problems found in this file.</div>`);
+      }
+      out.innerHTML = parts.join("");
+    }
+
+    for (const el of [src, paths]) el.addEventListener("input", render);
+    for (const btn of document.querySelectorAll("[data-ex]")) {
+      btn.addEventListener("click", () => {
+        src.value = $(btn.dataset.ex).content.textContent;
+        const p = document.getElementById(btn.dataset.ex + "-paths");
+        if (p) paths.value = p.content.textContent;
+        render();
+      });
+    }
+    $("ex-clear").addEventListener("click", () => { src.value = ""; paths.value = ""; render(); });
+  </script>
+</body>
+</html>

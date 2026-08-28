@@ -167,6 +167,15 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   directives, and Disallow lines that advertise sensitive paths.
   Differential-tested against protego, Scrapy's RFC 9309 parser
   (calibration-probed first; the one BOM divergence is documented).
+- **[gitignore](https://unsent.tools/tools/gitignore/)** — .gitignore
+  tester: paste a .gitignore and paths, get git's exact answer — ignored
+  or not, decided by which pattern on which line, with the excluded-parent
+  trap called out explicitly (a `!` negation can never re-include a file
+  whose parent directory is excluded, and the tool says so per path).
+  Anchoring, dir-only patterns, `**`, character classes, byte-level
+  wildcard semantics. Differential-tested against `git check-ignore -v`
+  itself (verdict + pattern + line all pinned), plus a randomized sweep
+  that caught git's undocumented bare-`!` behavior.
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested
