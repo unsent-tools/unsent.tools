@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>robots.txt tester — is this URL blocked? — unsent.tools</title>
+  <meta name="description" content="Paste a robots.txt and test URLs against it per RFC 9309: which group applies to your user-agent, which rule wins and why, wildcards, percent-encoding, plus lint warnings for typos and footguns. Entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .inputs textarea {
+      width: 100%; box-sizing: border-box; font-family: var(--mono);
+      font-size: 0.9rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem 0.7rem;
+    }
+    .inputs textarea:focus { outline: none; border-color: var(--accent); }
+    #src { min-height: 14rem; }
+    #urls { min-height: 5.5rem; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+    @media (max-width: 640px) { .split { grid-template-columns: 1fr; } }
+    .split input {
+      width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 0.95rem;
+      background: var(--card); color: var(--fg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.55rem 0.7rem;
+    }
+    .split input:focus { outline: none; border-color: var(--accent); }
+    .card {
+      margin-top: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; background: var(--card);
+    }
+    .card h2 { margin: 0 0 0.5rem; font-size: 1.02rem; }
+    .warn, .info {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-radius: 6px;
+    }
+    .warn { border-left: 3px solid #c94f4f; }
+    .info { border-left: 3px solid var(--accent); }
+    .allclear { margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid #3f9c5c; border-radius: 6px; }
+    table.results { width: 100%; font-size: 0.9rem; border-collapse: collapse; }
+    table.results td, table.results th {
+      padding: 0.4rem 0.5rem; border-top: 1px solid var(--border);
+      text-align: left; vertical-align: top;
+    }
+    table.results th { font-weight: 600; }
+    .v-allow { color: #3f9c5c; font-weight: 600; }
+    .v-block { color: #c94f4f; font-weight: 600; }
+    .mono { font-family: var(--mono); }
+    .muted { color: var(--muted); }
+    .lineref { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
+    .why { font-size: 0.85rem; color: var(--muted); }
+    .grouptag {
+      display: inline-block; font-family: var(--mono); font-size: 0.85rem;
+      border: 1px solid var(--border); border-radius: 5px; padding: 0.05rem 0.45rem;
+      margin: 0 0.3rem 0.3rem 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">robots.txt · RFC 9309</span>
+    </header>
+
+    <h1>robots.txt tester</h1>
+    <p class="lede">
+      Paste a robots.txt and find out what it actually says: which group
+      applies to a given crawler, whether a URL is allowed or blocked, and
+      exactly which rule decides it — with RFC 9309 longest-match precedence,
+      wildcards, and percent-encoding handled the way real parsers handle
+      them. Plus lint warnings for the classic mistakes. Nothing you paste
+      leaves your browser.
+    </p>
+
+    <div class="inputs">
+      <label for="src">robots.txt</label>
+      <textarea id="src" spellcheck="false" placeholder="User-agent: *&#10;Disallow: /admin/&#10;Allow: /admin/public/&#10;Sitemap: https://example.com/sitemap.xml"></textarea>
+    </div>
+
+    <div class="split">
+      <div>
+        <label for="ua">User-agent (crawler name)</label>
+        <input id="ua" spellcheck="false" value="Googlebot" placeholder="Googlebot">
+      </div>
+      <div>
+        <label for="urls">URLs or paths to test — one per line</label>
+        <textarea id="urls" spellcheck="false" placeholder="/admin/settings&#10;https://example.com/page?id=3"></textarea>
+      </div>
+    </div>
+
+    <div class="examples">
+      <button type="button" data-ex="t-wp">WordPress-style</button>
+      <button type="button" data-ex="t-ai">AI-crawler policy</button>
+      <button type="button" data-ex="t-nasty">Every mistake at once</button>
+      <button type="button" id="ex-clear">Clear</button>
+    </div>
+
+    <div id="out"></div>
+
+    <div class="card">
+      <h2>How matching works</h2>
+      <p style="font-size:0.9rem">
+        A crawler picks the group whose <span class="mono">User-agent</span>
+        name matches it most specifically (longest matching name wins;
+        <span class="mono">*</span> is only a fallback — a matching named
+        group completely replaces it, never combines with it). Within the
+        group, every rule is tried against the URL path: the rule with the
+        <em>longest</em> pattern wins, and on a tie
+        <span class="mono">Allow</span> beats
+        <span class="mono">Disallow</span>. Rule order is irrelevant.
+        <span class="mono">*</span> matches any run of characters, a trailing
+        <span class="mono">$</span> anchors the end of the URL, and patterns
+        and paths are compared percent-encoded, so
+        <span class="mono">/café</span> and
+        <span class="mono">/caf%C3%A9</span> are the same path — but
+        <span class="mono">%2F</span> is not the same as a literal slash.
+        If no rule matches, the URL is allowed: robots.txt is allow-by-default.
+      </p>
+      <p style="font-size:0.9rem" class="muted">
+        Remember what robots.txt is: a published request to polite crawlers,
+        not access control. Anyone can read it — and a
+        <span class="mono">Disallow</span> line pointing at a sensitive path
+        is an advertisement of that path.
+      </p>
+    </div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+<template id="t-wp">User-agent: *
+Disallow: /wp-admin/
+Allow: /wp-admin/admin-ajax.php
+Disallow: /?s=
+Disallow: /search/
+Disallow: /*?add-to-cart=
+
+Sitemap: https://example.com/sitemap_index.xml</template>
+<template id="t-wp-urls">/wp-admin/options.php
+/wp-admin/admin-ajax.php
+/search/shoes
+/product?add-to-cart=42
+/blog/hello-world</template>
+<template id="t-ai">User-agent: Googlebot
+User-agent: Bingbot
+Allow: /
+
+User-agent: GPTBot
+User-agent: CCBot
+User-agent: anthropic-ai
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: *
+Disallow: /api/
+Crawl-delay: 5</template>
+<template id="t-ai-urls">/articles/2026/story.html
+/api/v1/users</template>
+<template id="t-nasty">Disallow: /orphaned-rule
+User-agent: *
+Disalow: /typo-never-blocks
+Disallow: admin
+Disallow: /backup/
+Disallow: /wp-admin/
+Noindex: /old-page
+Crawl-delay: ten
+Sitemap: /sitemap.xml
+User agent: broken
+Disallow: /</template>
+<template id="t-nasty-urls">/orphaned-rule
+/typo-never-blocks
+/admin
+/backup/db.sql</template>
+
+  <script type="module">
+    import { parseRobots, checkUrl, selectGroups } from "./robots.js";
+
+    const $ = (id) => document.getElementById(id);
+    const src = $("src"), ua = $("ua"), urls = $("urls"), out = $("out");
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    function verdictRows(parsed, agent, list) {
+      return list.map((u) => {
+        const r = checkUrl(parsed, agent, u);
+        if (r.allowed === null) {
+          return `<tr><td class="mono">${esc(u)}</td><td class="muted" colspan="2">${esc(r.notes.join("; ") || "not testable")}</td></tr>`;
+        }
+        const v = r.allowed
+          ? `<span class="v-allow">allowed</span>`
+          : `<span class="v-block">blocked</span>`;
+        let why;
+        if (r.winner) {
+          why = `<span class="mono">${esc(r.winner.verb === "allow" ? "Allow" : "Disallow")}: ${esc(r.winner.rawPattern)}</span> <span class="lineref">line ${r.winner.line}</span>`;
+          const runnersUp = r.matches.length - 1;
+          if (runnersUp > 0) why += ` <span class="why">— longest of ${r.matches.length} matching rules</span>`;
+        } else if (r.matchedToken === null) {
+          why = `<span class="why">no group applies to this user-agent</span>`;
+        } else {
+          why = `<span class="why">no rule matches — allowed by default</span>`;
+        }
+        const notes = r.notes.length ? `<div class="why">${esc(r.notes.join(" · "))}</div>` : "";
+        return `<tr><td class="mono">${esc(r.path)}</td><td>${v}</td><td>${why}${notes}</td></tr>`;
+      }).join("");
+    }
+
+    function render() {
+      const text = src.value;
+      if (!text.trim()) { out.innerHTML = ""; return; }
+      const parsed = parseRobots(text);
+      const agent = ua.value.trim() || "*";
+      const parts = [];
+
+      // Which group applies
+      const sel = selectGroups(parsed, agent);
+      let groupLine;
+      if (sel.matchedToken === null) {
+        groupLine = `No group applies to <span class="mono">${esc(agent)}</span> (and there is no <span class="mono">*</span> group) — everything is allowed for it.`;
+      } else {
+        const at = sel.groups.map((g) => `line ${g.startLine}`).join(", ");
+        groupLine = `<span class="mono">${esc(agent)}</span> follows the
+          <span class="grouptag">User-agent: ${esc(sel.matchedToken)}</span> group${sel.groups.length > 1 ? `s (${sel.groups.length}, merged — ${at})` : ` (${at})`},
+          with ${sel.rules.length} rule${sel.rules.length === 1 ? "" : "s"}.`;
+        if (sel.crawlDelay) groupLine += ` Crawl-delay ${sel.crawlDelay.value}s applies to it (Bing/Yandex honor this; Google ignores it).`;
+      }
+      const list = urls.value.split("\n").map((s) => s.trim()).filter(Boolean);
+      const table = list.length
+        ? `<table class="results"><tr><th>URL</th><th>Verdict</th><th>Deciding rule</th></tr>${verdictRows(parsed, agent, list)}</table>`
+        : `<p class="muted" style="font-size:0.9rem">Add URLs on the right to test them.</p>`;
+      parts.push(`<div class="card"><h2>Verdicts</h2><p style="font-size:0.9rem">${groupLine}</p>${table}</div>`);
+
+      // Structure
+      const groupsHtml = parsed.groups.map((g) => {
+        const who = g.agents.map((a) => `<span class="grouptag">${esc(a.token)}</span>`).join("");
+        const rules = g.rules.map((r) =>
+          `<div class="mono" style="font-size:0.85rem">${r.verb === "allow" ? "Allow" : "Disallow"}: ${esc(r.rawPattern) || '<span class="muted">(empty — allows everything)</span>'} <span class="lineref">line ${r.line}</span></div>`
+        ).join("");
+        const delay = g.crawlDelay && g.crawlDelay.value !== null ? `<div class="mono" style="font-size:0.85rem">Crawl-delay: ${g.crawlDelay.value} <span class="lineref">line ${g.crawlDelay.line}</span></div>` : "";
+        return `<div style="margin:0.6rem 0">${who}${rules || delay ? rules + delay : '<div class="why">no rules — everything allowed for these crawlers</div>'}</div>`;
+      }).join("");
+      const sitemaps = parsed.sitemaps.length
+        ? `<p style="font-size:0.9rem"><strong>Sitemaps:</strong> ${parsed.sitemaps.map((s) => `<span class="mono">${esc(s.url)}</span>`).join(", ")}</p>`
+        : "";
+      parts.push(`<div class="card"><h2>Structure — ${parsed.groups.length} group${parsed.groups.length === 1 ? "" : "s"}</h2>${groupsHtml || '<p class="muted" style="font-size:0.9rem">No groups: a file with no User-agent lines blocks nothing.</p>'}${sitemaps}</div>`);
+
+      // Warnings
+      if (parsed.warnings.length) {
+        parts.push(`<div class="card"><h2>${parsed.warnings.length} warning${parsed.warnings.length === 1 ? "" : "s"}</h2>${parsed.warnings.map((w) => `<div class="warn">${esc(w.message)}</div>`).join("")}</div>`);
+      } else {
+        parts.push(`<div class="allclear">No problems found in this file.</div>`);
+      }
+      out.innerHTML = parts.join("");
+    }
+
+    for (const el of [src, ua, urls]) el.addEventListener("input", render);
+    for (const btn of document.querySelectorAll("[data-ex]")) {
+      btn.addEventListener("click", () => {
+        src.value = $(btn.dataset.ex).content.textContent;
+        const u = document.getElementById(btn.dataset.ex + "-urls");
+        if (u) urls.value = u.content.textContent;
+        render();
+      });
+    }
+    $("ex-clear").addEventListener("click", () => { src.value = ""; urls.value = ""; render(); });
+  </script>
+</body>
+</html>

@@ -158,6 +158,15 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   and transfer times for any size at any bandwidth. Differential-tested
   against Python's humanfriendly and bitmath (which disagree with each
   other about bits — documented) and fractions.Fraction for the exact math.
+- **[robots](https://unsent.tools/tools/robots/)** — robots.txt tester:
+  paste a robots.txt and test URLs against it per RFC 9309 — which group
+  applies to a crawler (longest name wins, named groups fully shadow `*`),
+  which rule decides each URL (longest percent-normalized pattern wins,
+  Allow beats Disallow on ties), wildcards and `$` anchors, plus lint
+  warnings for typos, orphaned rules, BOM breakage, non-standard
+  directives, and Disallow lines that advertise sensitive paths.
+  Differential-tested against protego, Scrapy's RFC 9309 parser
+  (calibration-probed first; the one BOM divergence is documented).
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested
