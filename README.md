@@ -158,6 +158,20 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   and transfer times for any size at any bandwidth. Differential-tested
   against Python's humanfriendly and bitmath (which disagree with each
   other about bits — documented) and fractions.Fraction for the exact math.
+- **[csp](https://unsent.tools/tools/csp/)** — Content-Security-Policy
+  analyzer: paste a CSP header and see what it really does — per-directive
+  breakdown with values browsers silently ignore struck through
+  (`'unsafe-inline'` under a nonce, allowlists under `'strict-dynamic'`),
+  warnings for the classic footguns (missing `object-src`/`base-uri`,
+  JSONP/Angular bypass hosts, duplicate directives, meta-tag-ignored
+  directives), and a URL tester that names the governing directive, the
+  fallback chain, and the matching source expression for each load. The
+  matcher is differential-tested against real headless Chromium (~250
+  verdicts per run), which pinned genuinely undocumented behavior: a
+  scheme-upgrade match (http→https) requires the URL port to be 443 even
+  when the ports are equal, and IPv6-literal sources can never match.
+  Findings are differential-tested against Google's csp-evaluator (400
+  generated policies), with its divergences from real browsers documented.
 - **[robots](https://unsent.tools/tools/robots/)** — robots.txt tester:
   paste a robots.txt and test URLs against it per RFC 9309 — which group
   applies to a crawler (longest name wins, named groups fully shadow `*`),

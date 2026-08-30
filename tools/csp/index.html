@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSP analyzer — what does this Content-Security-Policy actually allow? — unsent.tools</title>
+  <meta name="description" content="Paste a Content-Security-Policy header and see what it really does: per-directive breakdown, ignored values, bypass warnings, and a URL tester that tells you which directive and source expression decide each load — matching real browser behavior. Entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .inputs textarea, .split textarea {
+      width: 100%; box-sizing: border-box; font-family: var(--mono);
+      font-size: 0.9rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem 0.7rem;
+    }
+    .inputs textarea:focus, .split textarea:focus, .split input:focus, .split select:focus {
+      outline: none; border-color: var(--accent);
+    }
+    #src { min-height: 8rem; }
+    #urls { min-height: 5.5rem; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+    @media (max-width: 640px) { .split { grid-template-columns: 1fr; } }
+    .split input, .split select {
+      width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 0.92rem;
+      background: var(--card); color: var(--fg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.55rem 0.7rem;
+    }
+    .card {
+      margin-top: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; background: var(--card);
+    }
+    .card h2 { margin: 0 0 0.5rem; font-size: 1.02rem; }
+    .warn, .warn-med, .info, .syntaxnote {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-radius: 6px;
+    }
+    .warn { border-left: 3px solid #c94f4f; }
+    .warn-med { border-left: 3px solid #c98a2b; }
+    .info { border-left: 3px solid var(--accent); }
+    .syntaxnote { border-left: 3px solid #8a67c9; }
+    .allclear { margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid #3f9c5c; border-radius: 6px; }
+    table.results { width: 100%; font-size: 0.9rem; border-collapse: collapse; }
+    table.results td, table.results th {
+      padding: 0.4rem 0.5rem; border-top: 1px solid var(--border);
+      text-align: left; vertical-align: top;
+    }
+    table.results th { font-weight: 600; }
+    .v-allow { color: #3f9c5c; font-weight: 600; }
+    .v-block { color: #c94f4f; font-weight: 600; }
+    .v-cond  { color: #c98a2b; font-weight: 600; }
+    .mono { font-family: var(--mono); }
+    .muted { color: var(--muted); }
+    .why { font-size: 0.85rem; color: var(--muted); }
+    .dname { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
+    .chip {
+      display: inline-block; font-family: var(--mono); font-size: 0.84rem;
+      border: 1px solid var(--border); border-radius: 5px; padding: 0.05rem 0.4rem;
+      margin: 0 0.25rem 0.25rem 0;
+    }
+    .chip.k-keyword { border-color: #6a9c6a; }
+    .chip.k-nonce, .chip.k-hash { border-color: #5a8ab8; }
+    .chip.k-invalid { border-color: #c94f4f; color: #c94f4f; }
+    .chip.k-ignored { opacity: 0.55; text-decoration: line-through; }
+    .badge {
+      display: inline-block; font-size: 0.75rem; border-radius: 5px;
+      padding: 0.05rem 0.45rem; margin-left: 0.4rem; vertical-align: middle;
+      border: 1px solid var(--border); color: var(--muted);
+    }
+    .badge.ro { border-color: #c98a2b; color: #c98a2b; }
+    .ignored-dir { opacity: 0.55; text-decoration: line-through; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">Content-Security-Policy · CSP3</span>
+    </header>
+
+    <h1>CSP analyzer</h1>
+    <p class="lede">
+      Paste a <span class="mono">Content-Security-Policy</span> header and see
+      what it actually says: every directive and source expression explained,
+      values that browsers silently ignore, allowlist entries known to defeat
+      the whole policy — and a URL tester that answers "would this load?",
+      naming the directive and source expression that decide it. The matching
+      logic is tested against real Chromium, not just the spec. Nothing you
+      paste leaves your browser.
+    </p>
+
+    <div class="inputs">
+      <label for="src">CSP — a raw policy, full header line(s), or several policies</label>
+      <textarea id="src" spellcheck="false" placeholder="script-src 'self' cdn.example.com; object-src 'none'; base-uri 'self'"></textarea>
+    </div>
+
+    <div class="split">
+      <div>
+        <label for="pageurl">Page URL (defines <span class="mono">'self'</span> and the page scheme)</label>
+        <input id="pageurl" spellcheck="false" value="https://example.com/" placeholder="https://example.com/">
+      </div>
+      <div>
+        <label for="delivery">Delivered via</label>
+        <select id="delivery">
+          <option value="header">HTTP header</option>
+          <option value="meta">&lt;meta http-equiv&gt; tag</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="split">
+      <div>
+        <label for="rtype">Test loads as</label>
+        <select id="rtype"></select>
+      </div>
+      <div>
+        <label for="urls">URLs to test — one per line</label>
+        <textarea id="urls" spellcheck="false" placeholder="https://cdn.example.com/app.js&#10;https://evil.example/x.js&#10;data:text/javascript,alert(1)"></textarea>
+      </div>
+    </div>
+
+    <div class="examples">
+      <button type="button" data-ex="t-strict">Modern strict CSP</button>
+      <button type="button" data-ex="t-allowlist">Allowlist that looks safe</button>
+      <button type="button" data-ex="t-nasty">Every mistake at once</button>
+      <button type="button" id="ex-clear">Clear</button>
+    </div>
+
+    <div id="out"></div>
+
+    <div class="card">
+      <h2>How CSP decides a load</h2>
+      <p style="font-size:0.9rem">
+        For each load the browser picks one governing directive: the most
+        specific one present, walking a fallback chain (a script tries
+        <span class="mono">script-src-elem</span>, then
+        <span class="mono">script-src</span>, then
+        <span class="mono">default-src</span>). Only that directive's source
+        list is consulted — lists never merge. If no directive in the chain
+        exists, the load is allowed: CSP is allow-by-default.
+        <span class="mono">form-action</span>, <span class="mono">base-uri</span>
+        and <span class="mono">frame-ancestors</span> have no fallback, so
+        <span class="mono">default-src 'none'</span> alone does not restrict
+        form posts or framing. Within a list, a URL matches host sources by
+        scheme, host (with a leading <span class="mono">*.</span> wildcard),
+        port, and path prefix — an <span class="mono">http:</span> source also
+        matches its <span class="mono">https:</span> counterpart on port 443.
+        Nonces and hashes never match a URL by themselves: they admit specific
+        elements, and with <span class="mono">'strict-dynamic'</span> the host
+        allowlist is ignored for scripts entirely.
+      </p>
+      <p style="font-size:0.9rem" class="muted">
+        When several policies are active at once, a load must pass every
+        enforced policy — extra policies can only tighten, never loosen.
+        Report-only policies never block anything.
+      </p>
+    </div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+<template id="t-strict">Content-Security-Policy: script-src 'nonce-Xu3jbSZ9pQmVkFxc' 'strict-dynamic' https: 'unsafe-inline'; object-src 'none'; base-uri 'none'; report-uri https://csp.example.com/report</template>
+<template id="t-strict-urls">https://cdn.example.com/app.js
+https://evil.example/inject.js</template>
+<template id="t-allowlist">script-src 'self' ajax.googleapis.com *.cloudfront.net; img-src *; style-src 'self' 'unsafe-inline'; frame-ancestors 'self'</template>
+<template id="t-allowlist-urls">https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js
+https://example.com/app.js
+https://d111111abcdef8.cloudfront.net/lib.js</template>
+<template id="t-nasty">Content-Security-Policy-Report-Only: script-src self 'unsafe-inline' 'unsafe-eval' * data: http://cdn.example.com 'nonce-ab' [2001:db8::1]; script-src ignored.example; img-src x.example x.example 'none' https//oops.example; objekt-src 'none'; upgrade-insecure-requests now; reflected-xss block; frame-ancestors 'none'</template>
+<template id="t-nasty-urls">https://anything.example/evil.js
+data:text/javascript,alert(1)</template>
+
+  <script src="csp.js"></script>
+  <script>
+  (() => {
+    const { parseHeader, analyze, evaluateLoad, classifySource, RESOURCE_TYPES } = window.CSP;
+    const $ = (id) => document.getElementById(id);
+    const src = $("src"), pageurl = $("pageurl"), delivery = $("delivery"),
+          rtype = $("rtype"), urls = $("urls"), out = $("out");
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    for (const [key, t] of Object.entries(RESOURCE_TYPES)) {
+      const opt = document.createElement("option");
+      opt.value = key; opt.textContent = t.label;
+      rtype.appendChild(opt);
+    }
+
+    const KIND_TITLES = {
+      keyword: "keyword", nonce: "nonce — admits elements carrying this exact nonce attribute",
+      hash: "hash — admits inline content with this exact digest",
+      scheme: "scheme source — any host with this scheme", host: "host source", invalid: "invalid — browsers drop this",
+    };
+
+    function policyCard(policy, idx, total, findings) {
+      const ignoredValues = new Set(
+        findings.filter((f) => (f.id === "ignored-strict-dynamic" || f.id === "ignored-unsafe-inline") && f.policy === idx)
+          .map((f) => `${f.directive}|${(f.value || "").toLowerCase()}`));
+      const rows = policy.directives.map((d) => {
+        const chips = d.values.map((v) => {
+          const c = classifySource(v);
+          const ignored = !d.ignored && ignoredValues.has(`${d.name}|${v.toLowerCase()}`);
+          const cls = `chip k-${c.kind}${ignored ? " k-ignored" : ""}`;
+          const title = c.kind === "invalid" ? c.reason : ignored ? "ignored by modern browsers (see warnings)" : KIND_TITLES[c.kind] || "";
+          return `<span class="${cls}" title="${esc(title)}">${esc(v)}</span>`;
+        }).join(" ");
+        const nameCls = d.ignored ? "dname ignored-dir" : "dname";
+        const note = d.ignored ? ' <span class="why">duplicate — ignored</span>' : "";
+        return `<tr><td class="${nameCls}">${esc(d.rawName)}</td><td>${chips || '<span class="why">empty — blocks everything</span>'}${note}</td></tr>`;
+      }).join("");
+      const badge = policy.disposition === "report-only"
+        ? '<span class="badge ro">report-only</span>' : "";
+      const head = total > 1 ? `Policy ${idx + 1} of ${total}` : "Policy";
+      return `<div class="card"><h2>${head}${badge}</h2><table class="results">${rows}</table></div>`;
+    }
+
+    const LEVEL_CLS = { high: "warn", medium: "warn-med", syntax: "syntaxnote", info: "info" };
+    const LEVEL_ORDER = { high: 0, medium: 1, syntax: 2, info: 3 };
+
+    function findingsCard(findings, total) {
+      if (!findings.length) return '<div class="allclear">No problems found.</div>';
+      const sorted = [...findings].sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
+      const items = sorted.map((f) => {
+        const where = [total > 1 ? `policy ${f.policy + 1}` : "", f.directive || ""].filter(Boolean).join(" · ");
+        const loc = where ? `<span class="mono" style="font-size:0.82rem">${esc(where)}</span> — ` : "";
+        return `<div class="${LEVEL_CLS[f.level]}">${loc}${esc(f.message)}</div>`;
+      }).join("");
+      const high = findings.filter((f) => f.level === "high").length;
+      return `<div class="card"><h2>${findings.length} finding${findings.length === 1 ? "" : "s"}${high ? ` (${high} serious)` : ""}</h2>${items}</div>`;
+    }
+
+    function urlCard(parsed, type, list, origin) {
+      const total = parsed.policies.length;
+      const rows = list.map((u) => {
+        let url = u.trim();
+        if (!url) return "";
+        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) {
+          try { url = new URL(url, origin).href; } catch { /* keep as-is */ }
+        }
+        const r = evaluateLoad(parsed, type, url, origin);
+        const V = { allowed: '<span class="v-allow">allowed</span>',
+                    blocked: '<span class="v-block">blocked</span>',
+                    conditional: '<span class="v-cond">conditional</span>' }[r.verdict];
+        const why = r.results.map((res) => {
+          const p = total > 1 ? `policy ${parsed.policies.indexOf(res.policy) + 1}: ` : "";
+          if (!res.directive) return `<div class="why">${p}${esc(res.notes[0] || "no applicable directive — allowed")}</div>`;
+          const m = res.matched ? ` matched <span class="mono">${esc(res.matched)}</span>` : "";
+          const chain = res.chain.length > 1 && res.directive !== res.chain[0]
+            ? ` <span class="why">(no ${res.chain.slice(0, res.chain.indexOf(res.directive)).join(", ")})</span>` : "";
+          const notes = res.notes.length ? `<div class="why">${res.notes.map(esc).join("; ")}</div>` : "";
+          return `<div class="why">${p}governed by <span class="mono">${esc(res.directive)}</span>${chain} — ${res.verdict}${m}${notes}</div>`;
+        }).join("");
+        return `<tr><td class="mono" style="word-break:break-all">${esc(u.trim())}</td><td>${V}</td><td>${why}</td></tr>`;
+      }).join("");
+      if (!rows) return "";
+      return `<div class="card"><h2>URL test — as ${esc(RESOURCE_TYPES[type].label)}</h2>
+        <table class="results"><tr><th>URL</th><th>Verdict</th><th>Why</th></tr>${rows}</table></div>`;
+    }
+
+    function render() {
+      const text = src.value;
+      if (!text.trim()) { out.innerHTML = ""; return; }
+      let origin = pageurl.value.trim() || "https://example.com/";
+      if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(origin)) origin = "https://" + origin;
+      const parsed = parseHeader(text);
+      if (!parsed.policies.length) {
+        out.innerHTML = '<div class="card"><p class="muted">Nothing parseable yet.</p></div>';
+        return;
+      }
+      const findings = analyze(parsed, { delivery: delivery.value });
+      const parts = [];
+      parsed.policies.forEach((p, i) => parts.push(policyCard(p, i, parsed.policies.length, findings)));
+      parts.push(findingsCard(findings, parsed.policies.length));
+      const list = urls.value.split("\n").filter((s) => s.trim());
+      if (list.length) parts.push(urlCard(parsed, rtype.value, list, origin));
+      out.innerHTML = parts.join("");
+    }
+
+    for (const el of [src, pageurl, urls]) el.addEventListener("input", render);
+    for (const el of [delivery, rtype]) el.addEventListener("change", render);
+    for (const btn of document.querySelectorAll("[data-ex]")) {
+      btn.addEventListener("click", () => {
+        src.value = $(btn.dataset.ex).content.textContent.trim();
+        const u = $(btn.dataset.ex + "-urls");
+        if (u) urls.value = u.content.textContent.trim();
+        if (btn.dataset.ex === "t-strict") rtype.value = "script";
+        if (btn.dataset.ex === "t-allowlist") rtype.value = "script";
+        render();
+      });
+    }
+    $("ex-clear").addEventListener("click", () => { src.value = ""; urls.value = ""; render(); });
+  })();
+  </script>
+</body>
+</html>
