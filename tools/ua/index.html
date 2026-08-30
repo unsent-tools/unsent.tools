@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>User-Agent string inspector — what does it really say? — unsent.tools</title>
+  <meta name="description" content="Paste a User-Agent string: which browser, OS and device it claims to be (ua-parser rules), a token-by-token breakdown of the compatibility fossils, and which parts are frozen or reduced and no longer true. Entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .inputs textarea {
+      width: 100%; box-sizing: border-box; font-family: var(--mono);
+      font-size: 0.9rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem 0.7rem;
+      min-height: 4.5rem;
+    }
+    .inputs textarea:focus { outline: none; border-color: var(--accent); }
+    .card {
+      margin-top: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; background: var(--card);
+    }
+    .card h2 { margin: 0 0 0.5rem; font-size: 1.02rem; }
+    .warn, .info {
+      margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-radius: 6px;
+    }
+    .warn { border-left: 3px solid #c94f4f; }
+    .info { border-left: 3px solid var(--accent); }
+    .mono { font-family: var(--mono); }
+    .muted { color: var(--muted); }
+    table.id { width: 100%; font-size: 0.92rem; border-collapse: collapse; }
+    table.id td { padding: 0.35rem 0.5rem; border-top: 1px solid var(--border); vertical-align: top; }
+    table.id td:first-child { color: var(--muted); white-space: nowrap; width: 7rem; }
+    .tok {
+      display: inline-block; font-family: var(--mono); font-size: 0.88rem;
+      border: 1px solid var(--border); border-radius: 5px; padding: 0.1rem 0.45rem;
+      margin: 0 0.25rem 0.35rem 0;
+    }
+    .tok.product { border-left: 3px solid var(--accent); }
+    .tok.comment { border-left: 3px solid #b58a3c; }
+    .tok.junk { border-left: 3px solid #c94f4f; }
+    .tokrow { margin: 0.75rem 0; }
+    .toknote { font-size: 0.87rem; color: var(--muted); margin: 0.25rem 0 0 0.2rem; }
+    .toknote .mono { color: var(--fg); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">User-Agent · ua-parser</span>
+    </header>
+
+    <h1>User-Agent string inspector</h1>
+    <p class="lede">
+      Paste a User-Agent string and see what it claims: the browser, OS and
+      device (identified with ua-parser's community rules), a token-by-token
+      account of why the string looks the way it does — every browser still
+      claims to be Mozilla — and, just as important, which parts are frozen
+      placeholders that stopped describing the real system years ago.
+      Nothing you paste leaves your browser.
+    </p>
+
+    <div class="inputs">
+      <label for="src">User-Agent string</label>
+      <textarea id="src" spellcheck="false" placeholder="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"></textarea>
+    </div>
+
+    <div class="examples">
+      <button type="button" id="ex-mine">This browser's UA</button>
+      <button type="button" data-ex="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36">Chrome on Windows</button>
+      <button type="button" data-ex="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36">Chrome on Android</button>
+      <button type="button" data-ex="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15">Safari on a Mac</button>
+      <button type="button" data-ex="Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0">Firefox on Linux</button>
+      <button type="button" data-ex="Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/139.0.0.0 Safari/537.36">Googlebot</button>
+      <button type="button" data-ex="Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)">IE 6 (2004)</button>
+      <button type="button" id="ex-clear">Clear</button>
+    </div>
+
+    <div id="out"></div>
+
+    <div class="card">
+      <h2>Why User-Agent strings look like this</h2>
+      <p style="font-size:0.9rem">
+        A User-Agent string is a chain of compatibility claims, each layer
+        added so old sniffing code would serve the good version of a page.
+        Mosaic begat Netscape (code name Mozilla), so Netscape said
+        <span class="mono">Mozilla/1.0</span>; IE claimed
+        <span class="mono">Mozilla/4.0 (compatible; MSIE&nbsp;…)</span> to get
+        Netscape's pages; WebKit (a fork of KDE's KHTML) declared itself
+        <span class="mono">(KHTML, like Gecko)</span> to get Firefox's; Chrome
+        claimed Safari; and everyone still opens with
+        <span class="mono">Mozilla/5.0</span>. Since 2021 the process has run
+        in reverse: browsers now freeze or reduce what's left (exact versions,
+        OS builds, device models) to shrink the fingerprinting surface, so
+        several tokens are deliberate placeholders. This tool shows both
+        layers: what the string says, and where it stopped being true.
+      </p>
+      <p style="font-size:0.9rem" class="muted">
+        Identification uses the ua-parser project's
+        <a href="https://github.com/ua-parser/uap-core">uap-core</a> rules
+        (Apache-2.0), compiled into this page — 1,270 patterns maintained by
+        the community. This implementation passes all 18,000+ uap-core test
+        fixtures and is differential-tested against the reference Python
+        implementation; see <a href="../../testing/">how these tools are
+        tested</a>. Remember the limits: a User-Agent is an unverified claim.
+        Anything — curl, a bot, a script — can send any string.
+      </p>
+    </div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a>
+    </footer>
+  </div>
+
+  <script type="module">
+    import { analyze, versionString } from "./ua.js";
+
+    const $ = (id) => document.getElementById(id);
+    const src = $("src"), out = $("out");
+    const esc = (s) => s.replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+    function idRow(label, value) {
+      return `<tr><td>${label}</td><td>${value}</td></tr>`;
+    }
+
+    function render() {
+      const s = src.value.trim();
+      if (!s) { out.innerHTML = ""; return; }
+      const a = analyze(s);
+
+      const parts = [];
+
+      // identification
+      const rows = [];
+      const ag = a.id.agent;
+      rows.push(idRow("Browser", ag
+        ? `<strong>${esc(ag.family)}</strong>${versionString(ag) ? " " + esc(versionString(ag)) : ""}`
+        : '<span class="muted">not recognized ("Other")</span>'));
+      const os = a.id.os;
+      rows.push(idRow("OS", os
+        ? `<strong>${esc(os.family)}</strong>${versionString(os) ? " " + esc(versionString(os)) : ""}`
+        : '<span class="muted">not recognized ("Other")</span>'));
+      const dv = a.id.device;
+      rows.push(idRow("Device", dv
+        ? `<strong>${esc(dv.family)}</strong>${dv.brand ? ` — brand ${esc(dv.brand)}` : ""}${dv.model && dv.model !== dv.family ? `, model ${esc(dv.model)}` : ""}`
+        : '<span class="muted">no device signature (typical for desktop)</span>'));
+      parts.push(`<div class="card"><h2>What it claims to be</h2><table class="id">${rows.join("")}</table></div>`);
+
+      // warnings
+      if (a.warnings.length)
+        parts.push(`<div class="card"><h2>What to know before believing it</h2>${
+          a.warnings.map((w) => `<div class="warn">${esc(w.message)}</div>`).join("")}</div>`);
+
+      // structure
+      const noteFor = new Map(a.notes.map((n) => [n.target, n.note]));
+      const used = new Set();
+      const tokrows = a.structure.parts.map((p) => {
+        let label, cls = p.kind;
+        if (p.kind === "product") label = esc(p.text);
+        else if (p.kind === "comment") label = esc(p.text);
+        else label = esc(p.text);
+        let html = `<span class="tok ${cls}">${label}</span>`;
+        const notes = [];
+        if (p.kind === "product" && noteFor.has(p.text) && !used.has(p.text)) {
+          notes.push([p.text, noteFor.get(p.text)]); used.add(p.text);
+        }
+        if (p.kind === "comment") {
+          const keys = [...(noteFor.has("Android 10; K") && p.inner.includes("Android 10; K") ? ["Android 10; K"] : []), ...p.segments];
+          for (const seg of keys)
+            if (noteFor.has(seg) && !used.has(seg)) { notes.push([seg, noteFor.get(seg)]); used.add(seg); }
+        }
+        const noteHtml = notes.map(([t, n]) =>
+          `<div class="toknote"><span class="mono">${esc(t)}</span> — ${esc(n)}</div>`).join("");
+        return `<div class="tokrow">${html}${noteHtml}</div>`;
+      }).join("");
+      parts.push(`<div class="card"><h2>Token by token</h2>${tokrows || '<p class="muted">nothing to parse</p>'}
+        <p class="muted" style="font-size:0.85rem;margin-bottom:0">
+        <span class="tok product" style="font-size:0.8rem">product/version</span>
+        <span class="tok comment" style="font-size:0.8rem">(comment; details)</span> —
+        the RFC 9110 grammar: products with versions, parenthesized comments.</p></div>`);
+
+      out.innerHTML = parts.join("");
+    }
+
+    src.addEventListener("input", render);
+    for (const btn of document.querySelectorAll("[data-ex]"))
+      btn.addEventListener("click", () => { src.value = btn.dataset.ex; render(); });
+    $("ex-mine").addEventListener("click", () => { src.value = navigator.userAgent; render(); });
+    $("ex-clear").addEventListener("click", () => { src.value = ""; render(); });
+  </script>
+</body>
+</html>

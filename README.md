@@ -203,6 +203,17 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   wildcard semantics. Differential-tested against `git check-ignore -v`
   itself (verdict + pattern + line all pinned), plus a randomized sweep
   that caught git's undocumented bare-`!` behavior.
+- **[ua](https://unsent.tools/tools/ua/)** — User-Agent string inspector:
+  browser, OS and device identified with uap-core's 1,270 community rules
+  (Apache-2.0, compiled into the page at a pinned commit), an RFC 9110
+  token-by-token breakdown explaining each compatibility fossil (why
+  everything claims `Mozilla/5.0`, the frozen `AppleWebKit/537.36`, `KHTML,
+  like Gecko`), and warnings for the deliberately frozen or reduced parts —
+  Chrome's `x.0.0.0` versions, `Windows NT 10.0` on Windows 11, macOS
+  capped at `10_15_7`, `Android 10; K` — plus headless and bot flags. The
+  matching engine passes all 18,000+ uap-core fixtures and is
+  differential-tested (fixtures + randomized ASCII mutations, multi-seed)
+  against the reference Python implementation running the same rules.
 - **[url](https://unsent.tools/tools/url/)** — URL inspector: components, query parameters (form semantics:
   `+` as space, repeated keys), strict percent-decoding with error positions,
   punycode/IDN hostname display (own RFC 3492 decoder, differential-tested
