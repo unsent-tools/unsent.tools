@@ -158,6 +158,19 @@ web root (see `~/resources/web-server.md`). Tests failing aborts the deploy.
   and transfer times for any size at any bandwidth. Differential-tested
   against Python's humanfriendly and bitmath (which disagree with each
   other about bits — documented) and fractions.Fraction for the exact math.
+- **[cookie](https://unsent.tools/tools/cookie/)** — Set-Cookie / Cookie
+  inspector: paste Set-Cookie headers and get the browser's real verdict —
+  accepted or rejected (control bytes, the 4096-byte limit, SameSite=None
+  without Secure, broken `__Host-` rules, Domain mismatches and public
+  suffixes) — plus the exact stored scope: host-only vs domain cookies,
+  default paths, the 400-day expiry cap, RFC 6265's peculiar date grammar
+  (any token order, month names only, seconds mandatory, timezones
+  ignored), silently-dropped oversized attributes, and a would-it-be-sent
+  tester covering domain/path/Secure/SameSite. Differential-tested against
+  real headless Chromium (generated cookies actually set and read back,
+  including via raw sockets so control bytes can be tested) and against
+  curl's independent date parser — five curl-vs-browser divergences found
+  and documented in the tests.
 - **[csp](https://unsent.tools/tools/csp/)** — Content-Security-Policy
   analyzer: paste a CSP header and see what it really does — per-directive
   breakdown with values browsers silently ignore struck through

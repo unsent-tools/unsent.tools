@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cookie inspector — would the browser accept this Set-Cookie? — unsent.tools</title>
+  <meta name="description" content="Paste Set-Cookie headers and see what browsers really do with them: accepted or rejected and why, the exact stored scope (domain, path, expiry with the 400-day cap), SameSite behavior, __Host- prefix rules, plus a would-it-be-sent tester. Matches real Chrome behavior. Entirely in your browser.">
+  <link rel="stylesheet" href="../../assets/style.css">
+  <style>
+    .inputs textarea, .split textarea {
+      width: 100%; box-sizing: border-box; font-family: var(--mono);
+      font-size: 0.9rem; background: var(--card); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem 0.7rem;
+    }
+    #src { min-height: 7rem; }
+    .inputs textarea:focus, .split input:focus, .split select:focus { outline: none; border-color: var(--accent); }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+    @media (max-width: 640px) { .split { grid-template-columns: 1fr; } }
+    .split input, .split select {
+      width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 0.92rem;
+      background: var(--card); color: var(--fg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.55rem 0.7rem;
+    }
+    .card { margin-top: 1.4rem; border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem 1.1rem; background: var(--card); }
+    .card h2 { margin: 0 0 0.5rem; font-size: 1.02rem; }
+    .warn, .info, .rejectbox { margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-radius: 6px; }
+    .warn { border-left: 3px solid #c98a2b; }
+    .rejectbox { border-left: 3px solid #c94f4f; }
+    .info { border-left: 3px solid var(--accent); }
+    .allclear { margin: 0.6rem 0; padding: 0.55rem 0.8rem; font-size: 0.9rem;
+      border: 1px solid var(--border); border-left: 3px solid #3f9c5c; border-radius: 6px; }
+    table.results { width: 100%; font-size: 0.9rem; border-collapse: collapse; }
+    table.results td, table.results th { padding: 0.4rem 0.5rem; border-top: 1px solid var(--border);
+      text-align: left; vertical-align: top; }
+    table.results th { font-weight: 600; white-space: nowrap; }
+    .v-allow { color: #3f9c5c; font-weight: 600; }
+    .v-block { color: #c94f4f; font-weight: 600; }
+    .mono { font-family: var(--mono); }
+    .muted { color: var(--muted); }
+    .why { font-size: 0.85rem; color: var(--muted); }
+    .cname { font-family: var(--mono); font-weight: 600; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a href="../../"><span class="logo">unsent.tools</span></a>
+      <span class="tag">Set-Cookie · RFC 6265bis</span>
+    </header>
+
+    <h1>Cookie inspector</h1>
+    <p class="lede">
+      Paste <span class="mono">Set-Cookie</span> headers (or a
+      <span class="mono">Cookie</span> request header) and see what browsers
+      really do: accepted or rejected and exactly why, the stored scope —
+      domain, path, expiry after the 400-day cap — SameSite behavior,
+      <span class="mono">__Host-</span> rules, size limits, and whether the
+      cookie would accompany a given request. The acceptance model is tested
+      against real Chrome and curl, not just the RFC. Cookies often carry
+      live session credentials; nothing you paste leaves your browser.
+    </p>
+
+    <div class="inputs">
+      <label for="src">Set-Cookie header(s) — one per line</label>
+      <textarea id="src" spellcheck="false" placeholder="Set-Cookie: sid=abc123; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=86400"></textarea>
+    </div>
+
+    <div class="split">
+      <div>
+        <label for="pageurl">Set by a response from</label>
+        <input id="pageurl" spellcheck="false" value="https://app.example.com/account/settings">
+      </div>
+      <div>
+        <label for="requrl">Would it be sent to (optional)</label>
+        <input id="requrl" spellcheck="false" placeholder="https://app.example.com/api/data">
+      </div>
+    </div>
+    <div class="split">
+      <div>
+        <label for="reqctx">…in this context</label>
+        <select id="reqctx">
+          <option value="same-site">same-site request (normal navigation within the site)</option>
+          <option value="cross-site-nav">cross-site top-level navigation (clicked link)</option>
+          <option value="cross-site-sub">cross-site subresource / fetch / iframe</option>
+        </select>
+      </div>
+      <div></div>
+    </div>
+
+    <div class="examples">
+      <button type="button" data-ex="t-good">Session cookie done right</button>
+      <button type="button" data-ex="t-tracker">Ten-year tracker</button>
+      <button type="button" data-ex="t-nasty">Every mistake at once</button>
+      <button type="button" id="ex-clear">Clear</button>
+    </div>
+
+    <div id="out"></div>
+
+    <div class="card">
+      <h2>The rules browsers actually enforce</h2>
+      <p style="font-size:0.9rem">
+        A cookie is rejected outright — not fixed, dropped — if it contains a
+        control byte, if name+value exceed 4096 bytes, if
+        <span class="mono">SameSite=None</span> lacks
+        <span class="mono">Secure</span>, if a <span class="mono">__Host-</span>
+        name breaks its rules (Secure, no Domain, <span class="mono">Path=/</span>),
+        or if its <span class="mono">Domain</span> doesn't cover the setting
+        host. An oversized <em>attribute</em> (over 1024 bytes) is dropped
+        silently while the cookie survives — usually changing its scope. Expiry
+        is capped at 400 days no matter what you ask for; a date in the past is
+        a deletion order. Cookie dates are their own dialect: token order is
+        free, months are names, seconds are mandatory, timezones are ignored.
+        And <span class="mono">Domain=site.example</span> doesn't restrict the
+        cookie — it <em>broadens</em> it to every subdomain; the tightest
+        cookie has no Domain at all.
+      </p>
+    </div>
+
+    <footer class="site">
+      <a href="../../">← all tools</a> · runs offline · no data leaves your browser
+    </footer>
+  </div>
+
+<template id="t-good">Set-Cookie: __Host-session=8f42a7c19b; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=7200</template>
+<template id="t-tracker">Set-Cookie: _uid=u-29401837; Domain=example.com; Path=/; Expires=Fri, 01 Jan 2038 00:00:00 GMT; SameSite=None; Secure</template>
+<template id="t-nasty">session=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0MiJ9.dGVzdA; Expires=21 Oct 2026 07:28
+__Host-auth=tok; Path=/app; Secure
+tracker=x; SameSite=None
+a=1; Domain=other.example; Max-Age=1.5; Frobnicate=on
+legacy=café flavored</template>
+
+  <script src="cookie.js"></script>
+  <script>
+  (() => {
+    const { parseSetCookieInput, parseCookieHeader, analyzeCookie, wouldSend } = window.COOKIE;
+    const $ = (id) => document.getElementById(id);
+    const src = $("src"), pageurl = $("pageurl"), requrl = $("requrl"), reqctx = $("reqctx"), out = $("out");
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    function fmtExpiry(e) {
+      if (e === "session") return "session — gone when the browser closes";
+      if (e === "past") return "in the past — this DELETES the cookie";
+      const d = new Date(e * 1000);
+      const days = Math.round((e - Date.now() / 1000) / 86400);
+      return `${d.toISOString().replace(".000", "")} (${days} day${days === 1 ? "" : "s"} from now)`;
+    }
+
+    function cookieCard(entry, idx) {
+      const r = analyzeCookie(entry, { pageUrl: pageurl.value.trim() || "https://example.com/" });
+      const title = entry.name !== "" ? entry.name : "(no name)";
+      const parts = [`<div class="card"><h2>${idx + 1}. <span class="cname">${esc(title)}</span></h2>`];
+      parts.push(`<div class="why mono" style="word-break:break-all">${esc(entry.raw)}</div>`);
+      if (!r.accepted) {
+        for (const reason of r.rejectReasons) parts.push(`<div class="rejectbox"><b>Rejected:</b> ${esc(reason)}</div>`);
+      } else {
+        const s = r.stored;
+        parts.push(`<table class="results">
+          <tr><th>value</th><td class="mono" style="word-break:break-all">${esc(s.value) || '<span class="muted">(empty)</span>'}</td></tr>
+          <tr><th>scope</th><td>${s.hostOnly
+            ? `host-only: exactly <span class="mono">${esc(s.domain)}</span>`
+            : `<span class="mono">${esc(s.domain)}</span> and all its subdomains`}
+            , paths under <span class="mono">${esc(s.path)}</span></td></tr>
+          <tr><th>expiry</th><td>${esc(fmtExpiry(s.expires))}</td></tr>
+          <tr><th>flags</th><td>${[
+            s.secure ? "Secure" : "<b>no Secure</b>",
+            s.httpOnly ? "HttpOnly" : "<b>no HttpOnly</b> (readable by page scripts)",
+            `SameSite=${s.sameSite === "default" ? "unset (Lax by default in Chrome)" : s.sameSite}`,
+            s.partitioned ? "Partitioned" : "",
+          ].filter(Boolean).join(" · ")}</td></tr>
+        </table>`);
+        const dest = requrl.value.trim();
+        if (dest && s.expires !== "past") {
+          const w = wouldSend(s, /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(dest) ? dest : "https://" + dest, reqctx.value);
+          parts.push(w.sent
+            ? `<div class="allclear"><b class="v-allow">would be sent</b> with a request to <span class="mono">${esc(dest)}</span> (${esc(reqctx.selectedOptions[0].textContent)})</div>`
+            : `<div class="info"><b class="v-block">not sent</b> to <span class="mono">${esc(dest)}</span>: ${esc(w.reasons.join("; "))}</div>`);
+        }
+      }
+      for (const wmsg of r.warnings) parts.push(`<div class="warn">${esc(wmsg)}</div>`);
+      for (const n of r.notes) parts.push(`<div class="info">${esc(n)}</div>`);
+      if (r.accepted && !r.warnings.length && !r.notes.length) parts.push(`<div class="allclear">No problems found.</div>`);
+      parts.push("</div>");
+      return parts.join("");
+    }
+
+    function render() {
+      const text = src.value;
+      if (!text.trim()) { out.innerHTML = ""; return; }
+      // a "Cookie:" request header is a different animal — handle it separately
+      if (/^\s*cookie\s*:/i.test(text.trim())) {
+        const pairs = parseCookieHeader(text.trim());
+        const rows = pairs.map((p) => `<tr><td class="cname">${esc(p.name) || '<span class="muted">(no name)</span>'}</td><td class="mono" style="word-break:break-all">${esc(p.value)}</td></tr>`).join("");
+        out.innerHTML = `<div class="card"><h2>Cookie request header — ${pairs.length} cookie${pairs.length === 1 ? "" : "s"}</h2>
+          <table class="results"><tr><th>name</th><th>value</th></tr>${rows}</table>
+          <div class="info">a Cookie request header carries only name=value pairs — attributes like Path or Secure never appear here; if you see them, something upstream is broken. Paste Set-Cookie response headers to analyze attributes.</div></div>`;
+        return;
+      }
+      const entries = parseSetCookieInput(text);
+      out.innerHTML = entries.map(cookieCard).join("");
+    }
+
+    for (const el of [src, pageurl, requrl]) el.addEventListener("input", render);
+    reqctx.addEventListener("change", render);
+    for (const btn of document.querySelectorAll("[data-ex]")) {
+      btn.addEventListener("click", () => {
+        src.value = $(btn.dataset.ex).content.textContent.trim();
+        if (btn.dataset.ex === "t-good") requrl.value = "https://app.example.com/api/data";
+        if (btn.dataset.ex === "t-tracker") { pageurl.value = "https://shop.example.com/"; requrl.value = "https://cdn.example.com/pixel"; reqctx.value = "cross-site-sub"; }
+        render();
+      });
+    }
+    $("ex-clear").addEventListener("click", () => { src.value = ""; requrl.value = ""; render(); });
+  })();
+  </script>
+</body>
+</html>
